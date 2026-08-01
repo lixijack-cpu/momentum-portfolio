@@ -37,9 +37,9 @@
 }
 html[data-theme="dark"]{
   --bg:#111111; --bg-2:#161616; --surface:#1c1c1c; --surface-2:#181818;
-  --border:#2a2a2a;
+  --border:#333333;
   --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 16px rgba(0,0,0,.4);
-  --shadow-lg:0 12px 40px rgba(0,212,255,.15);
+  --shadow-lg:0 12px 30px rgba(0,212,255,.25);
   --text-1:#f4f4f5; --text-2:#a1a1aa; --text-3:#52525b;
   --blue:#00d4ff; --blue-soft:rgba(0,212,255,.08);
   --purple:#bf7fff; --purple-soft:rgba(191,127,255,.10);
@@ -80,13 +80,6 @@ body{
 .brand-name{
   font-weight:700; font-size:1.15rem; letter-spacing:-.02em; color:var(--text-1);
 }
-@supports ((-webkit-background-clip:text) or (background-clip:text)){
-  .brand-name{
-    background:linear-gradient(135deg,var(--blue),var(--purple));
-    -webkit-background-clip:text; background-clip:text;
-    -webkit-text-fill-color:transparent;
-  }
-}
 .brand-tag{font-size:.75rem;color:var(--text-3);margin-left:10px}
 .nav-right{display:flex;align-items:center;gap:12px}
 .search-bar{display:flex;align-items:center;gap:8px;background:var(--bg-2);
@@ -107,12 +100,18 @@ body{
 .pulse-dot.neg{background:var(--red)}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.7}}
 .theme-btn{
-  width:38px;height:38px;border-radius:50%;border:1px solid var(--border);
-  background:var(--surface);cursor:pointer;font-size:1rem;line-height:1;color:inherit;
-  display:flex;align-items:center;justify-content:center;
-  transition:transform .4s, background .2s, border-color .2s;
+  width:52px;height:28px;border-radius:14px;border:1px solid var(--border);
+  background:var(--surface-2);cursor:pointer;flex:none;
+  display:flex;align-items:center;justify-content:flex-start;padding:0 4px;
+  transition:background .3s, border-color .3s;
 }
-.theme-btn:hover{background:var(--surface-2);transform:rotate(20deg)}
+html[data-theme="dark"] .theme-btn{justify-content:flex-end}
+.theme-btn-thumb{
+  width:20px;height:20px;border-radius:50%;
+  background:var(--text-2);transition:background .3s, transform .3s;
+}
+.theme-btn:hover .theme-btn-thumb{background:var(--text-1)}
+.theme-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* ---------------- page title ---------------- */
 .page-title-row{display:flex;justify-content:space-between;align-items:center;
@@ -328,7 +327,7 @@ footer a:hover{color:var(--blue)}
         Search…
       </div>
       <span class="nav-pill"><i class="pulse-dot" id="dot"></i><span id="navtxt">Loading…</span></span>
-      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme">🌙</button>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme"><div class="theme-btn-thumb"></div></button>
       <div class="user-avatar" aria-hidden="true"></div>
     </div>
   </div>
@@ -374,7 +373,9 @@ const btn  = document.getElementById('theme-btn');
   root.setAttribute('data-theme', stored || sys);
 })();
 function updateBtn(){
-  btn.textContent = root.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+  // The pill carries no text, so the thumb position is the only visual state. Mirror it
+  // into aria-pressed, otherwise the control is unreadable to assistive tech.
+  btn.setAttribute('aria-pressed', String(root.getAttribute('data-theme') === 'dark'));
 }
 function isDark(){ return root.getAttribute('data-theme') === 'dark'; }
 function cv(name){ return getComputedStyle(root).getPropertyValue(name).trim(); }
@@ -497,6 +498,31 @@ function equityHTML(d){
 
 const xy = arr => arr.map(p => ({x:p.d, y:p.v}));
 
+/* Vertical wash under a line: the token's own colour at `alpha` fading to transparent.
+   Reading the rgb out of the CSS variable means the fill re-derives per theme instead of
+   hardcoding one pair of rgba() literals. */
+function rgbOf(token){
+  const v = cv(token);
+  if(v.startsWith('#')){
+    const h = v.slice(1);
+    const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    return [parseInt(n.slice(0,2),16), parseInt(n.slice(2,4),16), parseInt(n.slice(4,6),16)];
+  }
+  const m = v.match(/-?\d+(\.\d+)?/g) || [148,163,184];
+  return [ +m[0], +m[1], +m[2] ];
+}
+function fadeDown(token, alpha){
+  const [r,g,b] = rgbOf(token);
+  return ctx => {
+    const area = ctx.chart.chartArea;
+    if(!area) return 'transparent';
+    const grad = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+    grad.addColorStop(1, 'transparent');
+    return grad;
+  };
+}
+
 /* Shading is driven off crash_table rather than a hardcoded date list, so the bands and
    the table below can never end up describing different windows. */
 const crashShade = {
@@ -521,13 +547,16 @@ const crashShade = {
 const liveGlow = {
   id:'liveGlow',
   beforeDatasetDraw(chart,args){
-    if(!isDark() || chart.data.datasets[args.index].label !== 'Live') return;
+    if(!isDark() || chart.data.datasets[args.index].key !== 'live') return;
     chart.ctx.save();
-    chart.ctx.shadowColor = cv('--chart-1');
-    chart.ctx.shadowBlur = 10;
+    // save/restore keeps the glow on this one line. Setting shadow straight onto the
+    // shared context (e.g. from an animation hook) leaks it onto the gridlines and the
+    // benchmark fill drawn afterwards, and vanishes once the animation stops.
+    chart.ctx.shadowColor = 'rgba(0,212,255,.6)';
+    chart.ctx.shadowBlur = 12;
   },
   afterDatasetDraw(chart,args){
-    if(!isDark() || chart.data.datasets[args.index].label !== 'Live') return;
+    if(!isDark() || chart.data.datasets[args.index].key !== 'live') return;
     chart.ctx.restore();
   }
 };
@@ -580,15 +609,18 @@ function renderEquityCurve(d){
   charts.equity = new Chart(el.getContext('2d'), {
     type:'line',
     data:{datasets:[
-      {label:'SPY', data:xy(ec.spy), borderColor:cv('--chart-spy'),
+      {key:'spy', label:'SPY Benchmark', data:xy(ec.spy), borderColor:cv('--chart-spy'),
        backgroundColor:cv('--chart-spy-bg'), borderWidth:1, pointRadius:0,
-       fill:true, tension:0, order:4},
-      {label:'Backtest', data:xy(ec.backtest), borderColor:cv('--chart-backtest'),
-       borderDash:[5,5], borderWidth:1.5, pointRadius:0, fill:false, tension:0, order:3},
-      {label:'Simulation', data:xy(ec.simulation), borderColor:cv('--chart-sim'),
-       borderWidth:2, pointRadius:0, fill:false, tension:0, order:2},
-      {label:'Live', data:xy(ec.live), borderColor:cv('--chart-1'),
-       borderWidth:3, pointRadius:0, fill:false, tension:0, order:1}
+       pointHitRadius:8, fill:'origin', tension:0, order:4},
+      {key:'backtest', label:'Backtest', data:xy(ec.backtest),
+       borderColor:cv('--chart-backtest'), borderDash:[5,5], borderWidth:1.5,
+       pointRadius:0, pointHitRadius:8, tension:0, order:3,
+       fill:'origin', backgroundColor:fadeDown('--chart-backtest', .10)},
+      {key:'sim', label:'Simulation', data:xy(ec.simulation), borderColor:cv('--chart-sim'),
+       borderWidth:2, pointRadius:0, pointHitRadius:8, fill:false, tension:0, order:2},
+      {key:'live', label:'Live Paper Trading', data:xy(ec.live), borderColor:cv('--chart-1'),
+       borderWidth:3, pointRadius:0, pointHitRadius:8, tension:0, order:1,
+       fill:'origin', backgroundColor:fadeDown('--chart-1', isDark() ? .20 : .15)}
     ]},
     options:{
       responsive:true, maintainAspectRatio:false, normalized:true, animation:false,
@@ -623,7 +655,7 @@ function extTooltip(ctx){
   let strat = null, spy = null, label = null;
   m.dataPoints.forEach(p => {
     label = p.raw.x;
-    if(p.dataset.label === 'SPY') spy = p.raw.y;
+    if(p.dataset.key === 'spy') spy = p.raw.y;
     else if(strat === null) strat = p.raw.y;
   });
   if(label === null){ tt.style.opacity = 0; return; }
