@@ -36,10 +36,10 @@
   --sec-cash:rgba(148,163,184,.22);
 }
 html[data-theme="dark"]{
-  --bg:#111111; --bg-2:#161616; --surface:#1c1c1c; --surface-2:#222222;
+  --bg:#111111; --bg-2:#161616; --surface:#1c1c1c; --surface-2:#181818;
   --border:#2a2a2a;
   --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 16px rgba(0,0,0,.4);
-  --shadow-lg:0 8px 32px rgba(0,212,255,.07);
+  --shadow-lg:0 12px 40px rgba(0,212,255,.15);
   --text-1:#f4f4f5; --text-2:#a1a1aa; --text-3:#52525b;
   --blue:#00d4ff; --blue-soft:rgba(0,212,255,.08);
   --purple:#bf7fff; --purple-soft:rgba(191,127,255,.10);
@@ -89,6 +89,13 @@ body{
 }
 .brand-tag{font-size:.75rem;color:var(--text-3);margin-left:10px}
 .nav-right{display:flex;align-items:center;gap:12px}
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--bg-2);
+  border:1px solid var(--border);border-radius:6px;padding:6px 12px;
+  font-size:.8rem;color:var(--text-3);white-space:nowrap;
+  transition:background .3s, border-color .3s}
+.user-avatar{width:36px;height:36px;border-radius:50%;flex:none;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  border:2px solid var(--surface)}
 .nav-pill{
   display:inline-flex; align-items:center; gap:8px;
   background:var(--blue-soft); border:1px solid var(--blue); border-radius:999px;
@@ -107,8 +114,19 @@ body{
 }
 .theme-btn:hover{background:var(--surface-2);transform:rotate(20deg)}
 
+/* ---------------- page title ---------------- */
+.page-title-row{display:flex;justify-content:space-between;align-items:center;
+  gap:16px;flex-wrap:wrap;margin-top:28px}
+.page-title-row h1{font-size:1.8rem;font-weight:700;letter-spacing:-.03em}
+.opt-btn{background:var(--blue);color:#fff;border:none;border-radius:6px;
+  padding:8px 16px;font-size:.85rem;font-weight:600;cursor:pointer;
+  font-family:inherit;display:flex;align-items:center;gap:6px;
+  transition:filter .2s}
+.opt-btn:hover{filter:brightness(1.1)}
+html[data-theme="dark"] .opt-btn{color:#06131a}
+
 /* ---------------- hero stats ---------------- */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:28px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:20px}
 .stat{
   background:var(--surface); border:1px solid var(--border); border-radius:14px;
   padding:22px 24px; box-shadow:var(--shadow); border-left:3px solid transparent;
@@ -138,6 +156,35 @@ body{
 .card-sub{font-size:.78rem;color:var(--text-2);margin-top:2px}
 .card-stat{font-size:.8rem;color:var(--text-2);text-align:right}
 .card-stat b{color:var(--text-1);font-weight:600}
+
+/* ---------------- 2-column app grid ---------------- */
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;
+  align-items:start}
+.col-left,.col-right{display:flex;flex-direction:column;gap:20px;min-width:0}
+/* The grid gap owns the spacing here, so the stacked-card margin is dropped. */
+.main-grid .card{margin-top:0}
+/* At half width the holdings pairs would be ~270px each and the company names would
+   all ellipsis away, so the inner grid collapses to a single column. */
+.main-grid .holdings-grid{grid-template-columns:1fr}
+
+/* The heatmap and the crash table both carry a min-width tuned for a full-bleed card.
+   Left alone in a ~580px column they overflow their scroller and silently hide the
+   right-hand edge — Oct/Nov/Dec and the YTD pill in the heatmap's case. Both are
+   retuned to fit the column instead, so nothing is hidden behind a sideways scroll. */
+.main-grid .hm{min-width:0;grid-template-columns:28px repeat(12,1fr) 50px}
+.main-grid .hm-h{font-size:.56rem;letter-spacing:.01em}
+.main-grid .hm-yr{font-size:.62rem;padding-right:4px}
+.main-grid .hm-p{font-size:.6rem;padding:2px 3px;margin-left:4px}
+.main-grid .hm-c i{height:11px}
+.main-grid .hm-x{height:23px}
+.main-grid .hm-lg{gap:14px;font-size:.68rem}
+.main-grid .grad{width:110px}
+
+.main-grid table{min-width:0}
+.main-grid thead th,.main-grid tbody td{padding-right:8px}
+.main-grid .per small{font-size:.64rem}
+.main-grid .bars{min-width:78px}
+.main-grid .bar-cap{display:none}
 
 /* ---------------- charts ---------------- */
 .chart-box{position:relative;height:420px}
@@ -253,6 +300,9 @@ footer a:hover{color:var(--blue)}
   .hdr-inner{padding:0 16px}
   .brand{width:100%}
   .nav-right{width:100%;flex-wrap:wrap;padding-bottom:8px}
+  .main-grid{grid-template-columns:1fr}
+  .search-bar,.user-avatar{display:none}
+  .page-title-row h1{font-size:1.4rem}
   .stats{grid-template-columns:repeat(2,1fr);gap:12px}
   .stat{padding:16px 18px}
   .stat-num{font-size:1.9rem}
@@ -273,14 +323,28 @@ footer a:hover{color:var(--blue)}
       <span class="brand-tag">Long-Only · Multi-Factor · Monthly Rebalance</span>
     </div>
     <div class="nav-right">
+      <div class="search-bar" aria-hidden="true">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+        Search…
+      </div>
       <span class="nav-pill"><i class="pulse-dot" id="dot"></i><span id="navtxt">Loading…</span></span>
       <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme">🌙</button>
+      <div class="user-avatar" aria-hidden="true"></div>
     </div>
   </div>
 </header>
 
-<main class="wrap" id="app">
-  <div class="loading">Loading portfolio data…</div>
+<main class="wrap">
+  <div class="page-title-row">
+    <h1>Dashboard</h1>
+    <button class="opt-btn" type="button">
+      Options
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
+  <div id="app">
+    <div class="loading">Loading portfolio data…</div>
+  </div>
 </main>
 
 <footer>
@@ -353,9 +417,16 @@ async function init(){
     return;
   }
   renderHeader(DATA);
+  // Stats and the equity curve stay full-bleed; everything below drops into the two
+  // app-shell columns. The sections are composed here rather than moved in markup
+  // because each one is built as a string by its own *HTML() function.
   document.getElementById('app').innerHTML =
-    statsHTML(DATA) + equityHTML(DATA) + crashHTML(DATA) +
-    holdingsHTML(DATA) + sectorHTML(DATA) + heatmapHTML(DATA) + aboutHTML(DATA);
+    statsHTML(DATA) + equityHTML(DATA) +
+    '<div class="main-grid">' +
+      '<div class="col-left">'  + holdingsHTML(DATA) + crashHTML(DATA)   + '</div>' +
+      '<div class="col-right">' + heatmapHTML(DATA)  + sectorHTML(DATA)  + '</div>' +
+    '</div>' +
+    aboutHTML(DATA);
   wireAccordion();
   paintGradient();
   renderEquityCurve(DATA);
@@ -601,7 +672,7 @@ function crashHTML(d){
   return `<div class="card">
     <div class="card-hdr"><div>
       <div class="card-title">Capital Preservation During Market Crises</div>
-      <div class="card-sub">Peak-to-trough drawdown inside each window · all periods shown, wins and losses</div>
+      <div class="card-sub">Peak-to-trough drawdown inside each window · all periods shown, wins and losses · bars scaled to the deeper drawdown, shorter is better</div>
     </div></div>
     <div class="scroll-x"><table>
       <thead><tr><th>Period</th><th>Strategy</th><th>SPY</th><th>Edge</th><th>Relative depth</th></tr></thead>
@@ -692,6 +763,10 @@ function renderSectorChart(d){
   const sh = d.sector_history;
   const labels = sh.months.slice();
   const slot = sectorColours(sh.sectors);
+  // In the half-width app-shell column all 21 Januaries collide into one smear, so the
+  // year ruler thins out as the column narrows.
+  const w = el.clientWidth || 900;
+  const yrStep = w < 620 ? 3 : (w < 900 ? 2 : 1);
 
   const datasets = sh.sectors.map(name => ({
     label:name,
@@ -734,7 +809,11 @@ function renderSectorChart(d){
         x:{type:'category', stacked:true, grid:{display:false},
            border:{color:cv('--border')},
            ticks:{color:cv('--text-3'), maxRotation:0, autoSkip:false, font:{size:11},
-                  callback:(_v,i) => (labels[i] && labels[i].slice(5) === '01') ? labels[i].slice(0,4) : ''}},
+                  callback:(_v,i) => {
+                    const m = labels[i];
+                    if(!m || m.slice(5) !== '01') return '';
+                    return (+m.slice(0,4)) % yrStep === 0 ? m.slice(0,4) : '';
+                  }}},
         y:{stacked:true, max:100, grid:{color:cv('--border')}, border:{color:cv('--border')},
            ticks:{color:cv('--text-3'), font:{size:11}, callback:v => v + '%'}}
       }
