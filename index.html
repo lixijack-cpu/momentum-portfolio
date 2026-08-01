@@ -100,17 +100,24 @@ body{
 .pulse-dot.neg{background:var(--red)}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.7}}
 .theme-btn{
-  width:52px;height:28px;border-radius:14px;border:1px solid var(--border);
+  width:64px;height:30px;border-radius:15px;border:1px solid var(--border);
   background:var(--surface-2);cursor:pointer;flex:none;
-  display:flex;align-items:center;justify-content:flex-start;padding:0 4px;
+  display:flex;align-items:center;justify-content:space-between;padding:0 4px;
   transition:background .3s, border-color .3s;
+  position:relative;
 }
-html[data-theme="dark"] .theme-btn{justify-content:flex-end}
+/* Both icons stay put; the thumb slides over whichever one is not the active mode.
+   pointer-events:none so a click on an emoji still lands on the button. */
+.tb-icon{font-size:12px;line-height:1;pointer-events:none;user-select:none}
 .theme-btn-thumb{
-  width:20px;height:20px;border-radius:50%;
-  background:var(--text-2);transition:background .3s, transform .3s;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--text-2);
+  transition:transform .3s cubic-bezier(.4,0,.2,1), background .3s;
+  position:absolute;left:4px;
 }
-.theme-btn:hover .theme-btn-thumb{background:var(--text-1)}
+html[data-theme="dark"] .theme-btn-thumb{
+  transform:translateX(32px); background:var(--blue);
+}
 .theme-btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* ---------------- page title ---------------- */
@@ -327,7 +334,11 @@ footer a:hover{color:var(--blue)}
         Search…
       </div>
       <span class="nav-pill"><i class="pulse-dot" id="dot"></i><span id="navtxt">Loading…</span></span>
-      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme"><div class="theme-btn-thumb"></div></button>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme">
+        <span class="tb-icon">🌙</span>
+        <div class="theme-btn-thumb"></div>
+        <span class="tb-icon">☀️</span>
+      </button>
       <div class="user-avatar" aria-hidden="true"></div>
     </div>
   </div>
