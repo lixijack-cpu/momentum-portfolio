@@ -1,958 +1,1054 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="color-scheme" content="dark" />
-<title>Systematic Equity — Quantitative Portfolio Dashboard</title>
-<meta name="description" content="Systematic long-only US equity strategy. Multi-factor ranking, monthly rebalance, regime-aware risk management." />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>Systematic Equity — Long-Only Multi-Factor Strategy</title>
+<meta name="description" content="Walk-forward out-of-sample results for a long-only, multi-factor systematic equity strategy, net of costs, benchmarked against SPY." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
 :root{
-  --bg:#0a0f1e;
-  --card:rgba(255,255,255,0.04);
-  --card-hover:rgba(255,255,255,0.06);
-  --border:rgba(255,255,255,0.08);
-  --border-strong:rgba(255,255,255,0.14);
-  --ink:#f3f4f6;
-  --ink-2:#c3cad8;
-  --muted:#8b93a7;
-  --blue:#3b82f6;
-  --amber:#f59e0b;
-  --grey:#94a3b8;
-  --grey-deep:#64748b;
-  --green:#10b981;
-  --red:#ef4444;
-  --grid:rgba(255,255,255,0.06);
-
-  /* Validated 8-slot categorical palette (dark, surface #0a0f1e).
-     Adjacent-pair CVD ΔE 8.4 min, normal-vision ΔE 19.3 min, all ≥3:1 contrast. */
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-  --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --bg:#fafaf8; --bg-secondary:#f1f5f9; --surface:#ffffff; --surface-hover:#f8fafc;
+  --border:#e2e8f0;
+  --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+  --shadow-hover:0 8px 32px rgba(0,0,0,.12);
+  --text-primary:#0f172a; --text-secondary:#475569; --text-muted:#94a3b8;
+  --accent:#1d4ed8; --accent-soft:rgba(29,78,216,.08);
+  --purple:#6d28d9;
+  --positive:#059669; --positive-soft:rgba(5,150,105,.08);
+  --negative:#dc2626; --negative-soft:rgba(220,38,38,.08);
+  --amber:#b45309; --amber-soft:rgba(180,83,9,.10);
+  --neutral-soft:rgba(148,163,184,.10);
+  --chart-strategy:#1d4ed8; --chart-spy:rgba(148,163,184,.4); --chart-spy-fill:rgba(148,163,184,.08);
+  --chart-backtest:#94a3b8; --chart-sim:#f59e0b;
+  --crash-fill:rgba(220,38,38,.04);
+  --heatmap-pos5:#14532d; --heatmap-pos4:#15803d; --heatmap-pos3:#16a34a; --heatmap-pos2:#4ade80; --heatmap-pos1:#bbf7d0;
+  --heatmap-neg1:#fee2e2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#ef4444; --heatmap-neg4:#dc2626; --heatmap-neg5:#7f1d1d;
+  --sector-1:#1d4ed8; --sector-2:#6d28d9; --sector-3:#059669; --sector-4:#f59e0b;
+  --sector-5:#ef4444; --sector-6:#0891b2; --sector-7:#65a30d; --sector-8:#475569;
+  --sector-cash:rgba(148,163,184,.22);
+  --hold-finance:#1d4ed8; --hold-manufacturing:#6d28d9; --hold-healthcare:#059669;
+  --hold-durables:#b45309; --hold-other:#475569;
+}
+html[data-theme="dark"]{
+  --bg:#111111; --bg-secondary:#161616; --surface:#1c1c1c; --surface-hover:#222222;
+  --border:#2a2a2a;
+  --shadow:0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  --shadow-hover:0 8px 32px rgba(0,212,255,.08);
+  --text-primary:#f4f4f5; --text-secondary:#a1a1aa; --text-muted:#52525b;
+  --accent:#00d4ff; --accent-soft:rgba(0,212,255,.08);
+  --purple:#bf7fff;
+  --positive:#84cc16; --positive-soft:rgba(132,204,22,.08);
+  --negative:#f87171; --negative-soft:rgba(248,113,113,.08);
+  --amber:#f59e0b; --amber-soft:rgba(245,158,11,.12);
+  --neutral-soft:rgba(161,161,170,.10);
+  --chart-strategy:#00d4ff; --chart-spy:rgba(161,161,170,.3); --chart-spy-fill:rgba(161,161,170,.06);
+  /* Lifted off the spec's #475569: on a #111 ground that reads as absent, and this line
+     is the strategy's own 20-year record — it has to stay legible against the SPY grey. */
+  --chart-backtest:#8a8a93; --chart-sim:#f59e0b;
+  --crash-fill:rgba(248,113,113,.05);
+  --heatmap-pos5:#065f46; --heatmap-pos4:#059669; --heatmap-pos3:#34d399; --heatmap-pos2:#6ee7b7; --heatmap-pos1:#d1fae5;
+  --heatmap-neg1:#fef2f2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#f87171; --heatmap-neg4:#ef4444; --heatmap-neg5:#7f1d1d;
+  --sector-1:#00d4ff; --sector-2:#bf7fff; --sector-3:#34d399; --sector-4:#fbbf24;
+  --sector-5:#f87171; --sector-6:#22d3ee; --sector-7:#a3e635; --sector-8:#71717a;
+  --sector-cash:rgba(161,161,170,.16);
+  --hold-finance:#00d4ff; --hold-manufacturing:#bf7fff; --hold-healthcare:#34d399;
+  --hold-durables:#f59e0b; --hold-other:#71717a;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{-webkit-text-size-adjust:100%}
 body{
-  background:var(--bg);
-  color:var(--ink);
-  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
-  font-weight:300;
-  line-height:1.55;
-  -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg); color:var(--text-primary);
+  -webkit-font-smoothing:antialiased; line-height:1.5;
+  transition:background .3s ease, color .2s ease;
 }
-body::before{
-  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:
-    radial-gradient(900px 500px at 12% -8%, rgba(59,130,246,0.13), transparent 60%),
-    radial-gradient(760px 460px at 88% 4%, rgba(139,92,246,0.10), transparent 62%);
-}
-h1,h2,h3{font-weight:600;letter-spacing:-0.015em;line-height:1.25}
-a{color:inherit}
-.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px 64px}
 
 /* ---------- header ---------- */
 header{
-  position:sticky;top:0;z-index:100;
-  display:flex;justify-content:space-between;align-items:center;gap:16px;
-  flex-wrap:wrap;
-  padding:14px clamp(16px,3vw,32px);
-  /* Solid, not blurred. A backdrop-filter here has to snapshot everything behind the
-     header, and once the heatmap's ~11,000px-wide scroll layer is in that backdrop the
-     rasterisation locks the renderer on scroll. Over an opaque page the blur was
-     invisible regardless. */
-  background:#0b1120;
-  border-bottom:1px solid var(--border);
-  box-shadow:0 10px 30px -22px rgba(0,0,0,.95);
+  position:sticky; top:0; z-index:100; min-height:56px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  transition:background .3s ease, border-color .3s ease;
 }
-.brand h1{font-size:1.18rem;margin-bottom:2px}
-.brand p{color:var(--muted);font-size:0.8rem;font-weight:300;letter-spacing:0.01em}
-.pill{
-  display:flex;align-items:center;gap:10px;
-  padding:8px 14px;border-radius:999px;
-  background:rgba(59,130,246,0.10);
-  border:1px solid rgba(59,130,246,0.35);
-  box-shadow:0 0 18px rgba(59,130,246,0.14);
+.hdr{max-width:1200px;margin:0 auto;padding:8px 24px;min-height:56px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand b{font-weight:700;font-size:1.1rem;letter-spacing:-.01em}
+.brand span{color:var(--text-muted);font-size:.78rem}
+.nav-right{display:flex;align-items:center;gap:12px}
+.nav-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:6px 14px; font-size:.85rem; font-weight:500; color:var(--text-primary);
+  white-space:nowrap;
 }
-.pill .nav-val{font-weight:600;font-size:0.95rem}
-.pill .nav-sub{color:var(--muted);font-size:0.72rem;display:block;font-weight:300}
-.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;position:relative}
-.dot::after{content:'';position:absolute;inset:-4px;border-radius:50%;opacity:.28;background:inherit}
-.dot.fresh{background:var(--green)}
-.dot.warn{background:var(--amber)}
-.dot.stale{background:var(--red)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--positive);
+  animation:pulse 2s ease-in-out infinite;flex:none}
+.pulse.neg{background:var(--negative)}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.65}}
+#themeToggle{
+  width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface);cursor:pointer;font-size:1.1rem;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .4s ease, background .2s ease, border-color .2s ease;
+  color:inherit;
+}
+#themeToggle:hover{background:var(--surface-hover)}
+#themeToggle.spin{transform:rotate(180deg)}
 
-/* ---------- layout ---------- */
-main{max-width:1400px;margin:0 auto;padding:clamp(18px,3vw,32px);display:grid;gap:22px}
-/* Grid and flex children default to min-width:auto, so the wide scrollable charts would
-   otherwise stretch every ancestor instead of scrolling inside their own container. */
-main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
+/* ---------- cards ---------- */
 .card{
-  background:var(--card);
-  border:1px solid var(--border);
-  /* No backdrop-filter here on purpose. Two cards wrap scroll containers thousands of
-     pixels wide, and the blur surface gets allocated across the whole scrollable extent —
-     enough to freeze the renderer. Over an opaque page the blur is invisible anyway; the
-     glass effect comes from the translucent fill plus the hairline border. The sticky
-     header keeps its blur, where content genuinely passes underneath. */
-  border-radius:16px;
-  padding:clamp(18px,2.4vw,26px);
-  transition:transform .22s ease,box-shadow .22s ease,background .22s ease,border-color .22s ease;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  box-shadow:var(--shadow); padding:24px; margin-top:20px;
+  transition:background .3s ease, border-color .3s ease, transform .2s ease, box-shadow .2s ease;
 }
-.card:hover{
-  transform:translateY(-2px);
-  background:var(--card-hover);
-  border-color:var(--border-strong);
-  box-shadow:0 18px 40px -18px rgba(0,0,0,.75);
+.card-title{font-weight:600;font-size:1.05rem;letter-spacing:-.01em}
+.card-sub{color:var(--text-secondary);font-size:.82rem;margin-top:3px}
+.title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.title-stat{font-size:.82rem;color:var(--text-secondary);text-align:right}
+.title-stat b{color:var(--text-primary);font-weight:600}
+
+/* ---------- hero ---------- */
+.hero{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:24px}
+.stat{
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:20px 24px; box-shadow:var(--shadow);
+  transition:transform .2s ease, box-shadow .2s ease, background .3s ease, border-color .3s ease;
 }
-.section-head{margin-bottom:16px}
-.section-head h2{font-size:1.06rem}
-.section-head p{color:var(--muted);font-size:.82rem;margin-top:4px}
+.stat:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover)}
+.stat.a{border-left:3px solid var(--accent)}
+.stat.p{border-left:3px solid var(--purple)}
+.stat.m{border-left:3px solid var(--amber)}
+.stat.l{border-left:3px solid var(--positive)}
+.stat.l.neg{border-left-color:var(--negative)}
+.stat-label{text-transform:uppercase;font-size:.68rem;letter-spacing:.1em;color:var(--text-muted);font-weight:500}
+.stat-num{font-size:2.6rem;font-weight:900;letter-spacing:-.02em;line-height:1.15;margin:6px 0 2px;
+  font-variant-numeric:tabular-nums}
+.stat-sub{font-size:.8rem;color:var(--text-secondary)}
 
-/* ---------- hero stats ---------- */
-.hero{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
-.stat .label{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.09em;font-weight:500}
-.stat .value{font-weight:800;font-size:clamp(2rem,4.2vw,2.7rem);line-height:1.1;margin:8px 0 2px;letter-spacing:-0.03em}
-.stat .foot{color:var(--muted);font-size:.76rem}
-.v-blue{color:var(--blue)}.v-violet{color:#a78bfa}.v-amber{color:var(--amber)}.v-green{color:var(--green)}
-
-/* ---------- charts ---------- */
-.chart-box{position:relative;height:420px}
-.chart-box.short{height:300px}
-.chart-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
-.toggle button{
-  background:transparent;border:0;color:var(--muted);
-  font:inherit;font-size:.76rem;font-weight:500;
-  padding:5px 13px;cursor:pointer;transition:background .18s,color .18s;
+/* ---------- chart ---------- */
+.chart-box{position:relative;height:440px}
+.chart-box.short{height:320px}
+.chart-hint{text-align:center;font-size:.75rem;color:var(--text-muted);margin-top:12px}
+#tooltip{
+  position:absolute;pointer-events:none;opacity:0;transition:opacity .12s ease;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;
+  box-shadow:var(--shadow-hover);font-size:.8rem;z-index:20;min-width:170px;
 }
-.toggle button[aria-pressed="true"]{background:rgba(59,130,246,0.18);color:var(--ink)}
-.toggle button:hover{color:var(--ink)}
-.caption{color:var(--muted);font-size:.76rem;margin-top:12px}
-.scroll-x{overflow-x:auto;overflow-y:hidden;padding-bottom:8px}
-.scroll-x::-webkit-scrollbar{height:8px}
-.scroll-x::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:8px}
-.scroll-x::-webkit-scrollbar-track{background:transparent}
+#tooltip .tt-date{font-weight:600;margin-bottom:6px;color:var(--text-primary)}
+#tooltip .tt-row{display:flex;justify-content:space-between;gap:16px;font-variant-numeric:tabular-nums}
+#tooltip .tt-row span:first-child{color:var(--text-secondary)}
 
-/* ---------- legend ---------- */
-.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:14px}
-.legend span{display:inline-flex;align-items:center;gap:7px;font-size:.78rem;color:var(--ink-2)}
-.swatch{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
-
-/* ---------- tables ---------- */
-table{width:100%;border-collapse:collapse}
-th,td{text-align:right;padding:13px 12px;font-size:.88rem;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;white-space:normal}
+/* ---------- crash table ---------- */
+.scroll-x{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:620px}
 thead th{
-  color:var(--muted);font-size:.7rem;font-weight:500;
-  text-transform:uppercase;letter-spacing:.09em;
-  border-bottom:1px solid var(--border);
+  text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--text-muted);font-weight:500;padding:0 12px 10px 0;border-bottom:1px solid var(--border);
 }
-tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .18s}
-tbody tr:last-child{border-bottom:0}
-tbody tr:hover{background:rgba(255,255,255,.03)}
-.edge-pos{color:var(--green);font-weight:600}
-.edge-neg{color:var(--amber);font-weight:600}
-
-/* ---------- heatmap ---------- */
-.heat-wrap{display:flex;gap:10px;align-items:stretch}
-.heat-rowlabels{
-  display:grid;grid-template-rows:18px 34px 34px;gap:3px;
-  flex:0 0 auto;padding-top:0;
-}
-.heat-rowlabels span{
-  display:flex;align-items:center;font-size:.72rem;color:var(--muted);
-  white-space:nowrap;padding-right:4px;
-}
-.heat-track{display:grid;grid-auto-flow:column;grid-template-rows:18px 34px 34px;gap:3px}
-.heat-year{font-size:.68rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
-.heat-cell{
-  width:46px;border-radius:5px;display:flex;align-items:center;justify-content:center;
-  font-size:.68rem;font-weight:500;font-variant-numeric:tabular-nums;
-  color:rgba(255,255,255,.92);cursor:default;
-  transition:transform .14s ease,outline-color .14s ease;
-  outline:1px solid transparent;
-}
-.heat-cell:hover{transform:scale(1.13);outline-color:rgba(255,255,255,.55);position:relative;z-index:3}
-.scale-legend{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:.74rem;color:var(--muted)}
-.scale-bar{width:150px;height:9px;border-radius:5px;
-  background:linear-gradient(90deg,#b91c1c,#232a3a,#15803d)}
+tbody td{padding:12px 12px 12px 0;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr{transition:background .15s ease}
+tbody tr.data-row:hover{background:var(--surface-hover)}
+.period{font-weight:600;color:var(--text-primary)}
+.pill{display:inline-block;border-radius:6px;padding:3px 10px;font-weight:600;font-size:.82rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill.neg{background:var(--negative-soft);color:var(--negative)}
+.pill.spy{background:var(--neutral-soft);color:var(--text-secondary)}
+.pill.win{background:var(--positive-soft);color:var(--positive)}
+.pill.lose{background:var(--amber-soft);color:var(--amber)}
+.bars{min-width:180px}
+.bar{height:6px;border-radius:3px}
+.bar-strategy{background:var(--negative);margin-bottom:2px}
+.bar-spy{background:var(--text-muted)}
+.bar-legend{font-size:.66rem;color:var(--text-muted);margin-top:4px}
+.note-row td{padding:0 0 12px;border-bottom:1px solid var(--border);
+  color:var(--amber);font-size:.75rem;font-style:italic}
 
 /* ---------- holdings ---------- */
-.holding{
-  display:grid;
-  grid-template-columns:74px minmax(0,1fr) auto 132px;
-  gap:14px;align-items:center;
-  padding:12px 8px;border-bottom:1px solid rgba(255,255,255,.04);
-  transition:background .18s;
+.holdings{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.hold{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;
+  border-left:3px solid var(--hold-other);
+  opacity:0;animation:fadeIn .4s ease forwards;
+  transition:background .3s ease,border-color .3s ease,transform .2s ease,box-shadow .2s ease;
 }
-.holding:last-child{border-bottom:0}
-.holding:hover{background:rgba(255,255,255,.03)}
-.tkr{font-weight:600;font-size:.94rem}
-.co{color:var(--muted);font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip{
-  font-size:.68rem;padding:3px 10px;border-radius:999px;white-space:nowrap;
-  border:1px solid currentColor;font-weight:500;
-}
-.wbar{display:flex;align-items:center;gap:9px}
-.wbar .track{flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
-/* display:block matters — the fill is a <span>, and width/height are ignored on inline
-   boxes, which renders every weight bar empty. */
-.wbar .fill{display:block;height:100%;border-radius:4px;transition:width .5s ease}
-.wbar .pct{font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--ink-2);min-width:46px;text-align:right}
-.livestats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
-.livestat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
-.livestat .k{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
-.livestat .v{font-weight:600;font-size:1.24rem;margin-top:5px;font-variant-numeric:tabular-nums}
-.disclaimer{color:var(--muted);font-size:.74rem;margin-top:16px;line-height:1.6}
+.hold:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover)}
+@keyframes fadeIn{to{opacity:1}}
+.hold-top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.hold-tkr{font-weight:700;font-size:1rem;letter-spacing:-.01em}
+.hold-name{font-size:.85rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.chip{font-size:.65rem;padding:2px 8px;border-radius:999px;background:var(--bg-secondary);
+  color:var(--text-secondary);white-space:nowrap;flex:none}
+.hold-mid{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px;
+  font-variant-numeric:tabular-nums}
+.hold-val{font-weight:600;font-size:.95rem}
+.hold-shares{font-size:.78rem;color:var(--text-muted)}
+.wbar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex:1}
+.wbar>div{height:4px;border-radius:2px}
+.hold-bot{display:flex;align-items:center;gap:10px}
+.wpct{font-size:.75rem;color:var(--text-muted);font-variant-numeric:tabular-nums;flex:none}
+.summary{text-align:right;color:var(--text-secondary);font-size:.82rem;margin-top:14px;
+  font-variant-numeric:tabular-nums}
+.disclaimer{font-size:.75rem;color:var(--text-muted);font-style:italic;margin-top:8px}
 
-/* ---------- about ---------- */
-details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.02)}
-summary{
-  cursor:pointer;padding:18px 22px;font-weight:600;font-size:1rem;
-  display:flex;justify-content:space-between;align-items:center;gap:12px;
-  list-style:none;transition:background .18s;
-}
-summary::-webkit-details-marker{display:none}
-summary:hover{background:rgba(255,255,255,.03)}
-summary .caret{color:var(--muted);transition:transform .22s ease;font-size:.8rem}
-details[open] summary .caret{transform:rotate(180deg)}
-.about-body{padding:0 22px 22px;color:var(--ink-2);font-size:.92rem;max-width:78ch}
-.about-body p+p{margin-top:12px}
+/* ---------- heatmap ---------- */
+.hm{display:grid;gap:2px;min-width:760px;font-variant-numeric:tabular-nums}
+.hm-h{font-size:.65rem;color:var(--text-muted);text-align:center;font-weight:500;padding-bottom:2px}
+.hm-y{font-size:.72rem;color:var(--text-muted);text-align:right;padding-right:8px;
+  display:flex;align-items:center;justify-content:flex-end}
+.hm-cell{display:flex;flex-direction:column;gap:1px}
+.hm-cell i{display:block;height:14px;border-radius:2px}
+.hm-empty{height:29px;background:var(--bg-secondary);border-radius:2px}
+.hm-pill{font-size:.7rem;font-weight:600;border-radius:4px;padding:2px 6px;text-align:center;
+  display:flex;align-items:center;justify-content:center;margin-left:6px;white-space:nowrap}
+.hm-legend{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:16px;
+  font-size:.72rem;color:var(--text-muted)}
+.grad{width:180px;height:10px;border-radius:5px}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 
-/* ---------- footer ---------- */
+/* ---------- about / footer ---------- */
+.acc-btn{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:none;border:0;cursor:pointer;color:var(--text-primary);
+  font-family:inherit;font-size:1.05rem;font-weight:600;padding:0;text-align:left;
+}
+.acc-btn svg{transition:transform .3s ease;flex:none;stroke:var(--text-muted)}
+.acc-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.acc-body{display:none;padding-top:16px;color:var(--text-secondary);font-size:.88rem}
+.acc-body.open{display:block}
+.acc-body h4{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);
+  margin:16px 0 6px;font-weight:600}
+.acc-body p{margin-bottom:8px}
+.acc-body ul{margin:0 0 8px 18px}
 footer{
-  max-width:1400px;margin:10px auto 0;
-  padding:26px clamp(16px,3vw,32px) 46px;
-  border-top:1px solid var(--border);
-  display:flex;justify-content:space-between;align-items:flex-start;gap:22px;flex-wrap:wrap;
+  border-top:1px solid var(--border);margin-top:40px;padding:24px;
+  display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center;
+  max-width:1200px;margin-left:auto;margin-right:auto;
+  font-size:.76rem;color:var(--text-muted);
 }
-footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
-.social{display:flex;gap:12px}
-.social a{
-  width:38px;height:38px;border-radius:10px;
-  border:1px solid var(--border);background:rgba(255,255,255,.03);
-  display:flex;align-items:center;justify-content:center;color:var(--muted);
-  transition:color .18s,border-color .18s,transform .18s,background .18s;
-}
-.social a:hover{color:var(--ink);border-color:var(--border-strong);background:rgba(255,255,255,.07);transform:translateY(-2px)}
+footer a{color:var(--text-secondary);text-decoration:none}
+footer a:hover{color:var(--accent)}
+.f-center{text-align:center}
+.f-right{display:flex;gap:14px;justify-content:flex-end;align-items:center}
+.f-right svg{fill:var(--text-muted);transition:fill .2s ease}
+.f-right a:hover svg{fill:var(--accent)}
+.loading{text-align:center;padding:64px 0;color:var(--text-muted)}
 
-/* ---------- states ---------- */
-#state{
-  position:fixed;inset:0;z-index:200;display:flex;
-  flex-direction:column;align-items:center;justify-content:center;gap:18px;
-  background:var(--bg);text-align:center;padding:24px;
-}
-.spinner{
-  width:38px;height:38px;border-radius:50%;
-  border:2.5px solid rgba(255,255,255,.12);border-top-color:var(--blue);
-  animation:spin .85s linear infinite;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-#state p{color:var(--muted);font-size:.88rem}
-[hidden]{display:none !important}
-
-@media (max-width:720px){
-  .chart-box{height:320px}
-  .holding{grid-template-columns:64px minmax(0,1fr);row-gap:8px}
-  .holding .chip{justify-self:start}
-  .holding .wbar{grid-column:1 / -1}
-  header{gap:10px}
-  .brand h1{font-size:1.05rem}
-  th,td{padding:11px 8px;font-size:.82rem}
-}
-@media (prefers-reduced-motion:reduce){
-  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+@media (max-width:768px){
+  .wrap{padding:0 16px 48px}
+  .hdr{padding:8px 16px}
+  .brand{width:100%}
+  .nav-right{width:100%;flex-wrap:wrap}
+  .hero{grid-template-columns:repeat(2,1fr);gap:12px}
+  .stat{padding:16px}
+  .stat-num{font-size:1.9rem}
+  .chart-box,.chart-box.short{height:280px}
+  .holdings{grid-template-columns:1fr}
+  .card{padding:18px}
+  footer{grid-template-columns:1fr;text-align:center}
+  .f-right{justify-content:center}
 }
 </style>
 </head>
 <body>
 
-<div id="state">
-  <div class="spinner" id="spinner"></div>
-  <p id="state-msg">Loading portfolio data…</p>
-</div>
-
-<header hidden id="hdr">
-  <div class="brand">
-    <h1>Systematic Equity</h1>
-    <p>Long-Only · Multi-Factor · Monthly Rebalance</p>
-  </div>
-  <div class="pill">
-    <span class="dot" id="dot" title=""></span>
-    <span>
-      <span class="nav-val num" id="pill-nav">—</span>
-      <span class="nav-sub" id="pill-sub">—</span>
-    </span>
+<header>
+  <div class="hdr">
+    <div class="brand">
+      <b>Systematic Equity</b>
+      <span>· Long-Only · Multi-Factor · Monthly Rebalance</span>
+    </div>
+    <div class="nav-right">
+      <div class="nav-badge" id="navBadge">
+        <span class="pulse" id="navDot"></span><span id="navText">Loading…</span>
+      </div>
+      <button id="themeToggle" type="button" aria-label="Toggle colour theme" title="Toggle light / dark">🌙</button>
+    </div>
   </div>
 </header>
 
-<main hidden id="main">
+<div class="wrap">
+  <div id="app"><div class="loading">Loading portfolio data…</div></div>
+</div>
 
-  <section class="hero">
-    <div class="card stat">
-      <div class="label">Annualised Return</div>
-      <div class="value v-blue num" id="k-cagr">—</div>
-      <div class="foot" id="k-cagr-foot">—</div>
-    </div>
-    <div class="card stat">
-      <div class="label">Sharpe Ratio</div>
-      <div class="value v-violet num" id="k-sharpe">—</div>
-      <div class="foot" id="k-sharpe-foot">—</div>
-    </div>
-    <div class="card stat">
-      <div class="label">Max Drawdown</div>
-      <div class="value v-amber num" id="k-dd">—</div>
-      <div class="foot" id="k-dd-foot">—</div>
-    </div>
-    <div class="card stat">
-      <div class="label">Excess vs S&amp;P 500</div>
-      <div class="value v-green num" id="k-edge">—</div>
-      <div class="foot" id="k-edge-foot">—</div>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="section-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-      <div>
-        <h2>Growth of $10,000</h2>
-        <p id="curve-sub">—</p>
-      </div>
-      <div class="chart-tools">
-        <div class="toggle" role="group" aria-label="Y-axis scale">
-          <button id="btn-log" aria-pressed="true">Log</button>
-          <button id="btn-lin" aria-pressed="false">Linear</button>
-        </div>
-        <div class="toggle"><button id="btn-reset" aria-pressed="false">Reset zoom</button></div>
-      </div>
-    </div>
-    <div class="chart-box"><canvas id="equity"></canvas></div>
-    <div class="caption">💡 Scroll to zoom · Drag to pan · Double-click to reset</div>
-    <div class="caption" id="rebase-note"></div>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h2>Defending Capital During Market Crashes</h2>
-      <p>Peak-to-trough drawdown within each window, strategy versus S&amp;P 500.</p>
-    </div>
-    <div class="scroll-x">
-      <table>
-        <thead>
-          <tr><th>Period</th><th>Strategy</th><th>S&amp;P 500</th><th>Our Edge</th></tr>
-        </thead>
-        <tbody id="crash-body"></tbody>
-      </table>
-    </div>
-    <p class="disclaimer" id="crash-note"></p>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h2>20-Year Portfolio Composition — How the Model Adapts to Market Regimes</h2>
-      <p>Sector weights computed from certified point-in-time backtest positions. Bar height is
-         total equity exposure: the model de-risks toward cash in adverse regimes.</p>
-    </div>
-    <div class="scroll-x"><div id="sector-shell" class="chart-box short"><canvas id="sectors"></canvas></div></div>
-    <div class="legend" id="sector-legend"></div>
-    <p class="disclaimer" id="sector-note"></p>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h2>Monthly Performance — Portfolio vs S&amp;P 500</h2>
-      <p>Every calendar month since inception. Values are printed in each cell, so colour is
-         reinforcement rather than the only channel.</p>
-    </div>
-    <div class="heat-wrap">
-      <div class="heat-rowlabels"><span></span><span>Portfolio</span><span>S&amp;P 500</span></div>
-      <div class="scroll-x" style="flex:1"><div class="heat-track" id="heat"></div></div>
-    </div>
-    <div class="scale-legend">
-      <span>≤ −10%</span><span class="scale-bar"></span><span>≥ +10%</span>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="section-head">
-      <h2>Current Portfolio Holdings</h2>
-      <p id="hold-sub">—</p>
-    </div>
-    <div class="livestats">
-      <div class="livestat"><div class="k">Net Asset Value</div><div class="v num" id="l-nav">—</div></div>
-      <div class="livestat"><div class="k">Since Inception</div><div class="v num" id="l-ret">—</div></div>
-      <div class="livestat"><div class="k">Days Live</div><div class="v num" id="l-days">—</div></div>
-    </div>
-    <div id="holdings"></div>
-    <p class="disclaimer">Actual current positions may differ. Reporting lag applied per standard
-      institutional practice.</p>
-  </section>
-
-  <section>
-    <details>
-      <summary>About This Strategy <span class="caret">▼</span></summary>
-      <div class="about-body">
-        <p>A systematic long-only US equity strategy that selects stocks monthly using a proprietary
-        multi-factor ranking model combining fundamental quality and analyst-derived signals.
-        Portfolio construction applies convex drawdown-aware optimization with dynamic regime-based
-        risk management, allowing the strategy to reduce equity exposure during adverse market
-        conditions.</p>
-        <p>Validated using point-in-time clean data spanning 2005–2026 — no look-ahead bias, no
-        survivorship bias. Live paper trading commenced July 2026.</p>
-        <p id="about-method"></p>
-      </div>
-    </details>
-  </section>
-
-</main>
-
-<footer hidden id="ftr">
-  <p>This is a personal research project and paper trading simulation. Historical performance
-     represents a point-in-time simulation; no live capital was deployed prior to July 2026.
-     Past performance does not guarantee future results. Not investment advice.</p>
-  <div class="social">
-    <a href="https://github.com/lixijack-cpu/quant-fund" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>
+<footer>
+  <div>
+    © 2026 Jack Power · Systematic Equity Research<br />
+    Past performance does not guarantee future results. Not investment advice.
+  </div>
+  <div class="f-center">
+    <a href="https://lixijack-cpu.github.io/quant-fund" rel="noopener">lixijack-cpu.github.io/quant-fund</a>
+  </div>
+  <div class="f-right">
+    <a href="https://github.com/lixijack-cpu/quant-fund" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C18.4 4.5 19.4 4.8 19.4 4.8c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
     </a>
-    <a href="https://linkedin.com/in/jackpower" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05a3.74 3.74 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13ZM7.12 20.45H3.55V9h3.57v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z"/></svg>
+    <a href="https://linkedin.com/in/jackpower" target="_blank" rel="noopener" aria-label="LinkedIn" title="LinkedIn">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05a3.74 3.74 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13ZM7.12 20.45H3.55V9h3.57v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z"/></svg>
     </a>
   </div>
 </footer>
 
 <script>
-'use strict';
+/* ============================ theme ============================ */
+(function initTheme(){
+  var saved = null;
+  try { saved = localStorage.getItem('theme'); } catch(e){}
+  var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+})();
 
-const SECTOR_COLORS = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
-const SURFACE = '#0a0f1e';
-const INK_MUTED = '#8b93a7';
-const GRID = 'rgba(255,255,255,0.06)';
-
-/* ---------- formatting ---------- */
-const pct = (v, dp = 2) => (v * 100).toFixed(dp) + '%';
-const signedPct = (v, dp = 2) => (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%';
-const money = v => '$' + Math.round(v).toLocaleString('en-US');
-const money2 = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-
-function tradingDaysSince(iso) {
-  const then = new Date(iso + 'T00:00:00Z');
-  const now = new Date();
-  let days = 0;
-  const cur = new Date(then);
-  while (cur < now) {
-    cur.setUTCDate(cur.getUTCDate() + 1);
-    const d = cur.getUTCDay();
-    if (d !== 0 && d !== 6) days++;
-  }
-  return days;
+function cssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function currentTheme(){
+  return document.documentElement.getAttribute('data-theme') || 'light';
+}
+function syncToggleIcon(){
+  document.getElementById('themeToggle').textContent = currentTheme() === 'dark' ? '☀️' : '🌙';
 }
 
-function hexToRgb(hex) {
-  const h = hex.replace('#', '');
-  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+/* ============================ format helpers ============================ */
+var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var MINUS = '−';
+
+function pct(x, dp){
+  dp = dp === undefined ? 2 : dp;
+  var v = x * 100;
+  return (v >= 0 ? '+' : MINUS) + Math.abs(v).toFixed(dp) + '%';
 }
-function mix(a, b, t) {
-  const A = hexToRgb(a), B = hexToRgb(b);
-  return `rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`;
+/* Multi-hundred-percent figures need thousands separators to stay readable. */
+function pctBig(x){
+  var v = x * 100;
+  return (v >= 0 ? '+' : MINUS) + Math.round(Math.abs(v)).toLocaleString('en-US') + '%';
+}
+function pctPlain(x, dp){
+  var v = x * 100;
+  return (v >= 0 ? '' : MINUS) + Math.abs(v).toFixed(dp === undefined ? 2 : dp) + '%';
+}
+function money(x, dp){
+  return '$' + Number(x).toLocaleString('en-US', {
+    minimumFractionDigits: dp === undefined ? 0 : dp,
+    maximumFractionDigits: dp === undefined ? 0 : dp
+  });
+}
+function monthLabel(ym){
+  var p = ym.split('-');
+  return MONTHS[parseInt(p[1], 10) - 1] + ' ' + p[0];
+}
+function longMonth(ym){
+  var names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var p = ym.split('-');
+  return names[parseInt(p[1], 10) - 1] + ' ' + p[0];
+}
+function prettyDate(iso){
+  var p = iso.split('-');
+  return MONTHS[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
 }
 
-/* ---------- chart defaults ---------- */
-function applyDefaults() {
-  Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
-  Chart.defaults.font.weight = 300;
-  Chart.defaults.font.size = 11;
-  Chart.defaults.color = INK_MUTED;
-  Chart.defaults.animation.duration = 600;
-  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(13,19,36,0.96)';
-  Chart.defaults.plugins.tooltip.borderColor = 'rgba(255,255,255,0.14)';
-  Chart.defaults.plugins.tooltip.borderWidth = 1;
-  Chart.defaults.plugins.tooltip.padding = 12;
-  Chart.defaults.plugins.tooltip.cornerRadius = 10;
-  Chart.defaults.plugins.tooltip.titleColor = '#f3f4f6';
-  Chart.defaults.plugins.tooltip.bodyColor = '#c3cad8';
-  Chart.defaults.plugins.tooltip.titleFont = {weight: 600, size: 12};
-  Chart.defaults.plugins.tooltip.displayColors = true;
-  Chart.defaults.plugins.tooltip.boxWidth = 9;
-  Chart.defaults.plugins.tooltip.boxHeight = 9;
-  Chart.defaults.plugins.tooltip.usePointStyle = true;
+/* ============================ state ============================ */
+var DATA = null;
+var charts = {};
+
+fetch('./portfolio_snapshot.json', {cache: 'no-store'})
+  .then(function(r){
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(function(json){
+    DATA = json;
+    render();
+    syncToggleIcon();
+  })
+  .catch(function(err){
+    document.getElementById('app').innerHTML =
+      '<div class="loading">Could not load portfolio data (' + err.message + ').</div>';
+  });
+
+document.getElementById('themeToggle').addEventListener('click', function(){
+  var next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('theme', next); } catch(e){}
+  syncToggleIcon();
+  this.classList.toggle('spin');
+  // Canvas colours are baked at draw time, so charts must be rebuilt on a theme flip.
+  setTimeout(rebuildCharts, 60);
+});
+
+/* ============================ render ============================ */
+function render(){
+  renderHeader();
+  document.getElementById('app').innerHTML =
+    heroHTML() + equityHTML() + crashHTML() + holdingsHTML() + sectorHTML() + heatmapHTML() + aboutHTML();
+  wireAccordion();
+  animateHero();
+  buildEquityChart();
+  buildSectorChart();
 }
 
-/* Vertical event markers. Written inline so the page keeps to the three approved
-   CDN libraries rather than pulling in the annotation plugin. */
-const eventLines = {
-  id: 'eventLines',
-  afterDatasetsDraw(chart, _args, opts) {
-    const events = opts && opts.events;
-    if (!events) return;
-    const {ctx, chartArea: area, scales} = chart;
+function rebuildCharts(){
+  Object.keys(charts).forEach(function(k){
+    if(charts[k]){ charts[k].destroy(); charts[k] = null; }
+  });
+  buildEquityChart();
+  buildSectorChart();
+  paintHeatmap();
+}
+
+/* ---------- header badge ---------- */
+function renderHeader(){
+  var live = DATA.live || {};
+  var ret = live.since_inception_return;
+  var up = !(ret < 0);
+  document.getElementById('navDot').className = 'pulse' + (up ? '' : ' neg');
+  document.getElementById('navText').textContent =
+    (live.nav != null ? money(live.nav, 2) : '—') + ' · ' + (ret != null ? pct(ret, 2) : '—');
+}
+
+/* ---------- hero ---------- */
+function heroHTML(){
+  var h = DATA.headline, live = DATA.live || {};
+  var ret = live.since_inception_return;
+  var up = !(ret < 0);
+
+  return '<div class="hero">' +
+    stat('a', 'BACKTESTED CAGR · ' + h.months_oos + ' MONTHS', h.cagr, 'accent',
+         'vs SPY ' + pct(h.benchmark_cagr, 2) + ' · ' + (h.excess_vs_spy_bps >= 0 ? '+' : MINUS) +
+         Math.abs(h.excess_vs_spy_bps) + ' bps/yr alpha', 'pct') +
+    stat('p', 'SHARPE RATIO · NET OF COSTS', h.sharpe, 'purple',
+         'vs SPY ' + h.benchmark_sharpe.toFixed(3) + ' · ' +
+         Math.round((h.sharpe / h.benchmark_sharpe - 1) * 100) + '% better risk-adjusted', 'num') +
+    stat('m', 'MAX DRAWDOWN · ' + String(h.max_drawdown_basis).toUpperCase(), h.max_drawdown, 'amber',
+         'vs SPY ' + pctPlain(h.benchmark_max_drawdown, 1) + ' · ' +
+         (h.benchmark_max_drawdown / h.max_drawdown).toFixed(1) + '× less tail risk', 'pctplain') +
+    stat('l' + (up ? '' : ' neg'), 'LIVE PAPER TRADING · SINCE ' +
+         (live.inception_date ? monthLabel(live.inception_date.slice(0,7)).toUpperCase() : '—'),
+         ret, up ? 'positive' : 'negative',
+         'NAV ' + money(live.nav, 2) + ' · ' + live.days_live + ' days live', 'live') +
+  '</div>';
+}
+
+function stat(cls, label, value, colour, sub, kind){
+  return '<div class="stat ' + cls + '">' +
+    '<div class="stat-label">' + label + '</div>' +
+    '<div class="stat-num" style="color:var(--' + colour + ')" ' +
+      'data-value="' + value + '" data-kind="' + kind + '">&nbsp;</div>' +
+    '<div class="stat-sub">' + sub + '</div>' +
+  '</div>';
+}
+
+function formatStat(kind, v){
+  if(kind === 'pct')      return pct(v, 2);
+  if(kind === 'pctplain') return pctPlain(v, 2);
+  if(kind === 'num')      return v.toFixed(3);
+  if(kind === 'live')     return (v >= 0 ? '▲ +' : '▼ ' + MINUS) + Math.abs(v * 100).toFixed(1) + '%';
+  return String(v);
+}
+
+function animateHero(){
+  var nodes = document.querySelectorAll('.stat-num');
+  var DUR = 1200;
+  Array.prototype.forEach.call(nodes, function(node){
+    var target = parseFloat(node.getAttribute('data-value'));
+    var kind = node.getAttribute('data-kind');
+    if(!isFinite(target)){ node.textContent = '—'; return; }
+
+    var settled = false;
+    function settle(){
+      settled = true;
+      node.textContent = formatStat(kind, target);
+    }
+    // Browsers throttle rAF in background tabs, which would otherwise strand these
+    // numbers part-way through the count-up — a page loaded in a background tab would
+    // sit there showing a wrong performance figure. The timer guarantees the true value
+    // lands whether or not the animation ever gets to run.
+    setTimeout(settle, DUR + 250);
+
+    var start = null;
+    function step(ts){
+      if(settled) return;
+      if(start === null) start = ts;
+      var t = Math.min((ts - start) / DUR, 1);
+      var eased = 1 - Math.pow(1 - t, 3);
+      node.textContent = formatStat(kind, target * eased);
+      if(t < 1) requestAnimationFrame(step);
+      else settle();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+/* ---------- equity curve ---------- */
+function equityHTML(){
+  var h = DATA.headline;
+  var spy = DATA.equity_curve.spy;
+  var spyTotal = spy[spy.length - 1].v / spy[0].v - 1;
+  return '<div class="card">' +
+    '<div class="title-row">' +
+      '<div>' +
+        '<div class="card-title">Performance Since ' + longMonth(h.window_start.slice(0,7)) + '</div>' +
+        '<div class="card-sub">Growth of ' + money(10000) + ', net of costs · benchmarked against SPY</div>' +
+      '</div>' +
+      '<div class="title-stat">Total Return: <b>' + pctBig(h.total_return) + '</b> · vs SPY <b>' +
+        pctBig(spyTotal) + '</b></div>' +
+    '</div>' +
+    '<div class="chart-box"><canvas id="equityChart"></canvas><div id="tooltip"></div></div>' +
+    '<div class="chart-hint">💡 Scroll to zoom · Drag to pan · Double-click to reset</div>' +
+  '</div>';
+}
+
+function toXY(arr){
+  return arr.map(function(p){ return {x: p.d, y: p.v}; });
+}
+
+/* Shade each crash window straight from crash_table, so the chart and the table below
+   can never describe different periods. */
+var crashShade = {
+  id: 'crashShade',
+  beforeDatasetsDraw: function(chart){
+    var t = chart.scales.x, area = chart.chartArea;
+    if(!t || !area || !DATA.crash_table) return;
+    var ctx = chart.ctx;
     ctx.save();
-    ctx.font = "500 10px 'Inter',sans-serif";
-    events.forEach(ev => {
-      const x = scales.x.getPixelForValue(new Date(ev.date).getTime());
-      if (x < area.left || x > area.right) return;
-      ctx.beginPath();
-      ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = ev.color;
-      ctx.globalAlpha = 0.55;
-      ctx.lineWidth = 1;
-      ctx.moveTo(x, area.top);
-      ctx.lineTo(x, area.bottom);
-      ctx.stroke();
-
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      const w = ctx.measureText(ev.label).width + 12;
-      // Flip the label inward when the marker sits near the right edge.
-      const flip = x + w + 6 > area.right;
-      const bx = flip ? x - w - 5 : x + 5;
-      ctx.fillStyle = 'rgba(10,15,30,0.88)';
-      ctx.strokeStyle = ev.color;
-      ctx.lineWidth = 1;
-      const by = area.top + 6, bh = 18, r = 5;
-      ctx.beginPath();
-      ctx.roundRect(bx, by, w, bh, r);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = ev.color;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(ev.label, bx + 6, by + bh / 2 + 0.5);
+    ctx.fillStyle = cssVar('--crash-fill');
+    DATA.crash_table.forEach(function(row){
+      var x0 = t.getPixelForValue(new Date(row.start).getTime());
+      var x1 = t.getPixelForValue(new Date(row.end).getTime());
+      var a = Math.max(Math.min(x0, x1), area.left);
+      var b = Math.min(Math.max(x0, x1), area.right);
+      if(b > a) ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
     });
     ctx.restore();
   }
 };
 
-/* Soft outer glow on the live series only. */
-const glowLine = {
-  id: 'glowLine',
-  beforeDatasetDraw(chart, args) {
-    if (chart.data.datasets[args.index] && chart.data.datasets[args.index].glow) {
-      chart.ctx.save();
-      chart.ctx.shadowColor = 'rgba(59,130,246,0.85)';
-      chart.ctx.shadowBlur = 14;
-    }
+/* Glow only the live line, and only in dark mode — a canvas-wide CSS filter would
+   bleed onto the benchmark and the gridlines. */
+var liveGlow = {
+  id: 'liveGlow',
+  beforeDatasetDraw: function(chart, args){
+    if(currentTheme() !== 'dark') return;
+    if(chart.data.datasets[args.index].label !== 'Live Paper Trading') return;
+    chart.ctx.save();
+    chart.ctx.shadowColor = cssVar('--chart-strategy');
+    chart.ctx.shadowBlur = 8;
   },
-  afterDatasetDraw(chart, args) {
-    if (chart.data.datasets[args.index] && chart.data.datasets[args.index].glow) {
-      chart.ctx.restore();
-    }
+  afterDatasetDraw: function(chart, args){
+    if(currentTheme() !== 'dark') return;
+    if(chart.data.datasets[args.index].label !== 'Live Paper Trading') return;
+    chart.ctx.restore();
   }
 };
 
-/* ---------- renderers ---------- */
-let equityChart = null;
-
-function renderHeadline(s) {
-  const h = s.headline;
-  document.getElementById('k-cagr').textContent = pct(h.cagr);
-  document.getElementById('k-cagr-foot').textContent =
-    `S&P 500 ${pct(h.benchmark_cagr)} over the same window`;
-
-  document.getElementById('k-sharpe').textContent = h.sharpe.toFixed(3);
-  document.getElementById('k-sharpe-foot').textContent =
-    `S&P 500 ${h.benchmark_sharpe.toFixed(3)} · daily, rf = 0`;
-
-  document.getElementById('k-dd').textContent = pct(h.max_drawdown, 1);
-  document.getElementById('k-dd-foot').textContent =
-    `Month-end sampled · ${pct(h.max_drawdown_daily, 1)} on daily marks`;
-
-  const bps = h.excess_vs_spy_bps;
-  document.getElementById('k-edge').textContent = (bps >= 0 ? '+' : '') + bps + ' bps/yr';
-  document.getElementById('k-edge-foot').textContent =
-    `S&P 500 max drawdown ${pct(h.benchmark_max_drawdown, 1)}`;
-
-  document.getElementById('curve-sub').textContent =
-    `${h.months_oos} months out-of-sample · ${h.window_start} to ${h.window_end} · net of costs`;
-
-  document.getElementById('about-method').textContent =
-    `Headline figures are measured over ${h.months_oos} out-of-sample months ` +
-    `(${h.window_start} to ${h.window_end}), net of transaction costs, against the ` +
-    `S&P 500 total-price series over the identical window.`;
+/* The trough marker is located from the data, not pinned to a hardcoded date, so it
+   stays on the real bottom if the series is ever rebuilt. */
+function troughOf(startISO, endISO){
+  var s = new Date(startISO).getTime(), e = new Date(endISO).getTime();
+  var best = null;
+  DATA.equity_curve.backtest.forEach(function(p){
+    var t = new Date(p.d).getTime();
+    if(t < s || t > e) return;
+    if(best === null || p.v < best.v) best = p;
+  });
+  return best;
 }
 
-function renderPill(s) {
-  const dot = document.getElementById('dot');
-  const days = tradingDaysSince(s.as_of);
-  const cls = days < 2 ? 'fresh' : days <= 5 ? 'warn' : 'stale';
-  dot.classList.add(cls);
-  dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
+var crashLabels = {
+  id: 'crashLabels',
+  afterDatasetsDraw: function(chart){
+    var t = chart.scales.x, area = chart.chartArea;
+    if(!t || !area) return;
+    var ctx = chart.ctx;
+    ctx.save();
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.textAlign = 'center';
 
-  const live = s.live;
-  if (live && live.nav != null) {
-    document.getElementById('pill-nav').textContent =
-      `${money2(live.nav)} · ${signedPct(live.since_inception_return)}`;
-    document.getElementById('pill-sub').textContent =
-      `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
-  } else {
-    document.getElementById('pill-nav').textContent = 'Awaiting first mark';
-    document.getElementById('pill-sub').textContent = `Data as of ${s.as_of}`;
-  }
-}
+    // Below roughly a phone's width these labels overlap into an unreadable smear, so
+    // the crash callouts drop out and only the live marker is kept. The shaded bands
+    // still mark the same periods, and the table below names them.
+    var roomy = (area.right - area.left) > 520;
 
-function renderEquity(s) {
-  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v}));
-  const ec = s.equity_curve;
+    var marks = roomy ? DATA.crash_table.map(function(row){
+      return {d: row.start, text: '▼ ' + shortCrash(row.period), colour: cssVar('--negative'), y: area.top + 14};
+    }) : [];
 
-  const spy = toXY(ec.spy);
-  const spyAt = new Map(spy.map(p => [p.x, p.y]));
-
-  const datasets = [
-    {
-      label: 'S&P 500',
-      data: spy,
-      borderColor: 'rgba(100,116,139,0.85)',
-      backgroundColor: 'rgba(100,116,139,0.13)',
-      borderWidth: 1,
-      fill: 'origin',
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 4
-    },
-    {
-      label: 'Backtest (2005–2025)',
-      data: toXY(ec.backtest),
-      borderColor: '#94a3b8',
-      borderWidth: 1.6,
-      borderDash: [5, 5],
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 3
-    },
-    {
-      label: '2026 Simulation',
-      data: toXY(ec.simulation),
-      borderColor: '#f59e0b',
-      borderWidth: 2,
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 2
-    },
-    {
-      label: 'Live Paper Trading',
-      data: toXY(ec.live),
-      borderColor: '#3b82f6',
-      borderWidth: 2.5,
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      glow: true,
-      order: 1
+    var gfc = DATA.crash_table.filter(function(r){ return /GFC|Financial/i.test(r.period); })[0];
+    if(roomy && gfc){
+      var low = troughOf(gfc.start, gfc.end);
+      if(low) marks.push({d: low.d, text: '▲ Bottom', colour: cssVar('--positive'), y: area.bottom - 8});
     }
-  ];
+    if(DATA.live && DATA.live.inception_date){
+      marks.push({d: DATA.live.inception_date, text: '📍 Live', colour: cssVar('--accent'), y: area.top + 14});
+    }
 
-  const events = [
-    {date: '2007-10-01', label: 'GFC Peak', color: '#ef4444'},
-    {date: '2020-02-19', label: 'COVID', color: '#ef4444'},
-    {date: '2022-01-03', label: 'Rate Hikes', color: '#f97316'}
-  ];
-  if (s.live && s.live.inception_date) {
-    events.push({date: s.live.inception_date, label: '📍 Live Start', color: '#3b82f6'});
+    marks.forEach(function(m){
+      var x = t.getPixelForValue(new Date(m.d).getTime());
+      if(x < area.left - 4 || x > area.right + 4) return;
+      x = Math.min(Math.max(x, area.left + 26), area.right - 26);
+      ctx.fillStyle = m.colour;
+      ctx.fillText(m.text, x, m.y);
+    });
+    ctx.restore();
   }
+};
 
-  equityChart = new Chart(document.getElementById('equity'), {
+function shortCrash(period){
+  if(/GFC|Financial/i.test(period)) return "GFC '07";
+  if(/EU|Debt/i.test(period))       return "EU '11";
+  if(/COVID/i.test(period))         return 'COVID';
+  if(/Rate|Hike|Bear/i.test(period))return 'Hikes';
+  return period;
+}
+
+function buildEquityChart(){
+  var el = document.getElementById('equityChart');
+  if(!el) return;
+  var ec = DATA.equity_curve;
+  var dark = currentTheme() === 'dark';
+
+  charts.equity = new Chart(el.getContext('2d'), {
     type: 'line',
-    data: {datasets},
-    plugins: [eventLines, glowLine],
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {mode: 'index', intersect: false, axis: 'x'},
-      layout: {padding: {top: 26}},
-      scales: {
-        x: {
-          type: 'time',
-          time: {unit: 'year', tooltipFormat: 'dd MMM yyyy'},
-          grid: {color: GRID, drawTicks: false},
-          border: {color: 'rgba(255,255,255,0.12)'},
-          ticks: {maxRotation: 0, autoSkipPadding: 22}
+    data: {
+      datasets: [
+        {
+          label: 'SPY Benchmark',
+          data: toXY(ec.spy),
+          borderColor: cssVar('--chart-spy'),
+          backgroundColor: cssVar('--chart-spy-fill'),
+          borderWidth: 1, pointRadius: 0, fill: true, tension: 0, order: 4
         },
-        y: {
-          type: 'logarithmic',
-          grid: {color: GRID, drawTicks: false},
-          border: {display: false},
-          ticks: {callback: v => money(v)}
+        {
+          label: 'Backtest',
+          data: toXY(ec.backtest),
+          borderColor: cssVar('--chart-backtest'),
+          borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, order: 3
+        },
+        {
+          label: 'Simulation',
+          data: toXY(ec.simulation),
+          borderColor: cssVar('--chart-sim'),
+          borderWidth: 2, pointRadius: 0, fill: false, tension: 0, order: 2
+        },
+        {
+          label: 'Live Paper Trading',
+          data: toXY(ec.live),
+          borderColor: cssVar('--chart-strategy'),
+          borderWidth: 2.5, pointRadius: 0, fill: false, tension: 0, order: 1
         }
-      },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, normalized: true,
+      animation: false,
+      interaction: {mode: 'index', intersect: false, axis: 'x'},
       plugins: {
         legend: {
-          position: 'top',
-          align: 'end',
-          labels: {usePointStyle: true, pointStyle: 'line', boxWidth: 26, padding: 15, color: '#c3cad8'}
-        },
-        eventLines: {events},
-        tooltip: {
-          callbacks: {
-            label(ctx) {
-              return ` ${ctx.dataset.label}: ${money(ctx.parsed.y)}`;
-            },
-            afterBody(items) {
-              if (!items.length) return '';
-              const x = items[0].parsed.x;
-              const bench = spyAt.get(x);
-              const port = items.find(i => i.dataset.label !== 'S&P 500');
-              if (bench == null || !port) return '';
-              const rel = port.parsed.y / bench - 1;
-              return `\nCumulative vs S&P 500: ${signedPct(rel, 1)}`;
-            }
+          display: true, position: 'bottom',
+          labels: {
+            color: cssVar('--text-secondary'), boxWidth: 12, boxHeight: 2,
+            usePointStyle: false, padding: 16, font: {size: 11}
           }
         },
+        tooltip: {enabled: false, external: externalTooltip},
+        crashShade: {}, crashLabels: {}, liveGlow: {},
         zoom: {
-          pan: {enabled: true, mode: 'x', modifierKey: null},
           zoom: {wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x'},
-          limits: {x: {minRange: 1000 * 60 * 60 * 24 * 30}}
+          pan: {enabled: true, mode: 'x'}
         }
       },
-      onDoubleClick: null
-    }
-  });
-
-  document.getElementById('equity').addEventListener('dblclick', () => equityChart.resetZoom());
-  document.getElementById('btn-reset').addEventListener('click', () => equityChart.resetZoom());
-
-  const btnLog = document.getElementById('btn-log');
-  const btnLin = document.getElementById('btn-lin');
-  const setScale = type => {
-    equityChart.options.scales.y.type = type;
-    equityChart.update();
-    btnLog.setAttribute('aria-pressed', String(type === 'logarithmic'));
-    btnLin.setAttribute('aria-pressed', String(type === 'linear'));
-  };
-  btnLog.addEventListener('click', () => setScale('logarithmic'));
-  btnLin.addEventListener('click', () => setScale('linear'));
-
-  if (s.live && s.live.rebase_factor > 1) {
-    document.getElementById('rebase-note').textContent =
-      'The live paper account is rebased to continue the simulated curve so both share one ' +
-      'axis; the account was funded at ' + money(s.live.inception_nav) +
-      ' and its true value is shown in the header and holdings below.';
-  }
-}
-
-function renderCrash(s) {
-  const body = document.getElementById('crash-body');
-  body.innerHTML = '';
-  s.crash_table.forEach(r => {
-    const win = r.edge_pp > 0;
-    const tr = document.createElement('tr');
-    tr.innerHTML =
-      `<td>${r.period}</td>` +
-      `<td class="num">${pct(r.strategy, 1)}</td>` +
-      `<td class="num">${pct(r.spy, 1)}</td>` +
-      `<td class="num ${win ? 'edge-pos' : 'edge-neg'}">${win ? '✅' : '⚠️'} ` +
-      `${(r.edge_pp >= 0 ? '+' : '') + r.edge_pp.toFixed(1)}pp</td>`;
-    body.appendChild(tr);
-  });
-
-  const losses = s.crash_table.filter(r => r.edge_pp <= 0).map(r => r.period);
-  document.getElementById('crash-note').textContent = losses.length
-    ? `Every stress window is reported, including those the strategy lost: ${losses.join(', ')}.`
-    : 'Every stress window measured is reported.';
-}
-
-function renderSectors(s) {
-  const sh = s.sector_history;
-  const shell = document.getElementById('sector-shell');
-  // Give each month ~13px so individual bars stay legible, then scroll horizontally.
-  shell.style.width = Math.max(900, sh.months.length * 13) + 'px';
-
-  const datasets = sh.sectors.map((name, i) => ({
-    label: name,
-    data: sh.weights[name].map(v => v * 100),
-    backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
-    borderColor: SURFACE,
-    borderWidth: {top: 1, right: 0, bottom: 0, left: 0},
-    borderSkipped: false
-  }));
-
-  new Chart(document.getElementById('sectors'), {
-    type: 'bar',
-    data: {labels: sh.months, datasets},
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {mode: 'index', intersect: false},
       scales: {
         x: {
-          stacked: true,
-          grid: {display: false},
-          border: {color: 'rgba(255,255,255,0.12)'},
-          // Thin the ticks to one per January *before* layout runs. Leaving 248 ticks in
-          // place and blanking them in the callback sends the layout solver into a
-          // non-converging loop that freezes the renderer.
-          afterBuildTicks(scale) {
-            scale.ticks = scale.ticks.filter(t => {
-              const m = sh.months[t.value];
-              return m && m.endsWith('-01');
-            });
-          },
+          type: 'time', time: {unit: 'year'}, bounds: 'data',
+          grid: {color: cssVar('--border')},
+          border: {color: cssVar('--border')},
+          ticks: {color: cssVar('--text-muted'), maxRotation: 0, autoSkip: true, font: {size: 11}}
+        },
+        y: {
+          grid: {color: cssVar('--border')},
+          border: {color: cssVar('--border')},
           ticks: {
-            maxRotation: 0,
-            callback(v) {
-              const m = this.getLabelForValue(v);
-              return m ? m.slice(0, 4) : '';
+            color: cssVar('--text-muted'), font: {size: 11},
+            callback: function(v){ return '$' + (v / 1000).toFixed(0) + 'k'; }
+          }
+        }
+      },
+      onClick: function(){}
+    },
+    plugins: [crashShade, liveGlow, crashLabels]
+  });
+
+  el.ondblclick = function(){ if(charts.equity) charts.equity.resetZoom(); };
+}
+
+function externalTooltip(context){
+  var tip = document.getElementById('tooltip');
+  if(!tip) return;
+  var model = context.tooltip;
+  if(model.opacity === 0){ tip.style.opacity = 0; return; }
+
+  var strat = null, spyV = null, label = null, seriesName = 'Strategy';
+  model.dataPoints.forEach(function(dp){
+    label = dp.raw.x;
+    if(dp.dataset.label === 'SPY Benchmark') spyV = dp.raw.y;
+    else if(strat === null){ strat = dp.raw.y; seriesName = dp.dataset.label; }
+  });
+  if(label === null){ tip.style.opacity = 0; return; }
+
+  var html = '<div class="tt-date">' + prettyDate(String(label)) + '</div>';
+  if(strat != null){
+    html += '<div class="tt-row"><span>Strategy</span><span style="color:var(--chart-strategy);font-weight:600">' +
+      money(strat, 0) + '</span></div>';
+  }
+  if(spyV != null){
+    html += '<div class="tt-row"><span>SPY</span><span style="color:var(--text-muted);font-weight:600">' +
+      money(spyV, 0) + '</span></div>';
+  }
+  if(strat != null && spyV != null){
+    var diff = (strat / 10000 - 1) - (spyV / 10000 - 1);
+    var col = diff >= 0 ? 'var(--positive)' : 'var(--negative)';
+    html += '<div class="tt-row" style="margin-top:4px"><span>vs SPY</span><span style="color:' + col +
+      ';font-weight:600">' + (diff >= 0 ? '+' : MINUS) + Math.abs(diff * 100).toFixed(1) + 'pp</span></div>';
+  }
+  tip.innerHTML = html;
+
+  var box = context.chart.canvas.parentNode.getBoundingClientRect();
+  var x = model.caretX, w = tip.offsetWidth || 180;
+  if(x + w + 16 > box.width) x = x - w - 16; else x = x + 16;
+  tip.style.opacity = 1;
+  tip.style.left = Math.max(0, x) + 'px';
+  tip.style.top = Math.max(0, model.caretY - 40) + 'px';
+}
+
+/* ---------- crash table ---------- */
+function crashHTML(){
+  // Both bars scale against the deeper of the two, so a period where the strategy fell
+  // further renders as a visibly longer bar instead of being clamped to look equal.
+  var rows = DATA.crash_table.map(function(r){
+    var worst = Math.max(Math.abs(r.strategy), Math.abs(r.spy));
+    var sW = Math.abs(r.strategy) / worst * 100;
+    var pW = Math.abs(r.spy) / worst * 100;
+    var win = r.edge_pp > 0;
+    var html =
+      '<tr class="data-row">' +
+        '<td class="period">' + r.period + '<div style="font-size:.7rem;color:var(--text-muted);font-weight:400">' +
+          prettyDate(r.start) + ' – ' + prettyDate(r.end) + '</div></td>' +
+        '<td><span class="pill neg">' + pctPlain(r.strategy, 1) + '</span></td>' +
+        '<td><span class="pill spy">' + pctPlain(r.spy, 1) + '</span></td>' +
+        '<td><span class="pill ' + (win ? 'win' : 'lose') + '">' +
+          (win ? '✅ +' : '⚠ ' + MINUS) + Math.abs(r.edge_pp).toFixed(1) + 'pp</span></td>' +
+        '<td class="bars">' +
+          '<div class="bar bar-strategy" style="width:' + sW.toFixed(1) + '%"></div>' +
+          '<div class="bar bar-spy" style="width:' + pW.toFixed(1) + '%"></div>' +
+          '<div class="bar-legend">strategy vs SPY drawdown · shorter is better</div>' +
+        '</td>' +
+      '</tr>';
+    // Losing rows are annotated in place rather than filtered out.
+    if(!win){
+      html += '<tr class="note-row"><td colspan="5">Strategy lagged SPY slightly in this period — ' +
+        'reported for transparency.</td></tr>';
+    }
+    return html;
+  }).join('');
+
+  return '<div class="card">' +
+    '<div class="title-row"><div>' +
+      '<div class="card-title">Capital Preservation During Market Crises</div>' +
+      '<div class="card-sub">Peak-to-trough drawdown inside each window · all periods shown, wins and losses</div>' +
+    '</div></div>' +
+    '<div class="scroll-x"><table>' +
+      '<thead><tr><th>Period</th><th>Strategy</th><th>SPY</th><th>Edge</th><th>Relative Defence</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table></div>' +
+  '</div>';
+}
+
+/* ---------- holdings ---------- */
+var HOLD_COLOUR = {
+  'Finance': 'var(--hold-finance)',
+  'Manufacturing': 'var(--hold-manufacturing)',
+  'Healthcare': 'var(--hold-healthcare)',
+  'Consumer Durables': 'var(--hold-durables)',
+  'Other': 'var(--hold-other)'
+};
+function holdColour(sector){ return HOLD_COLOUR[sector] || 'var(--hold-other)'; }
+
+function holdingsHTML(){
+  var h = DATA.holdings || {};
+  var pos = h.positions || [];
+  if(!pos.length){
+    return '<div class="card"><div class="card-title">Current Portfolio Holdings</div>' +
+      '<div class="card-sub" style="margin-top:10px">Positions are not currently published.</div></div>';
+  }
+  var total = pos.reduce(function(s, p){ return s + p.value; }, 0);
+  var maxW = Math.max.apply(null, pos.map(function(p){ return p.weight; }));
+
+  var cards = pos.map(function(p, i){
+    var col = holdColour(p.sector);
+    return '<div class="hold" style="border-left-color:' + col + ';animation-delay:' + (i * 60) + 'ms">' +
+      '<div class="hold-top">' +
+        '<span class="hold-tkr">' + p.ticker + '</span>' +
+        '<span class="hold-name">' + p.name + '</span>' +
+        '<span class="chip">' + p.sector + '</span>' +
+      '</div>' +
+      '<div class="hold-mid">' +
+        '<span class="hold-val">' + money(p.value, 2) + '</span>' +
+        '<span class="hold-shares">' + p.shares + ' sh · ' + money(p.price, 2) + '/sh</span>' +
+      '</div>' +
+      '<div class="hold-bot">' +
+        '<span class="wbar"><div style="width:' + (p.weight / maxW * 100).toFixed(1) + '%;background:' + col + '"></div></span>' +
+        '<span class="wpct">' + (p.weight * 100).toFixed(1) + '%</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  return '<div class="card">' +
+    '<div class="title-row"><div>' +
+      '<div class="card-title">Current Portfolio Holdings</div>' +
+      '<div class="card-sub">Small Account · ' + pos.length + ' Positions · Valued ' + prettyDate(h.as_of) +
+        (h.last_rebalance ? ' · from the ' + prettyDate(h.last_rebalance) + ' rebalance' : '') + '</div>' +
+    '</div></div>' +
+    '<div class="holdings">' + cards + '</div>' +
+    '<div class="summary">Total Deployed: ' + money(total, 2) + ' · ' + pos.length + ' positions</div>' +
+    '<div class="disclaimer">Live small-account book, marked at ' + prettyDate(h.as_of) +
+      ' closing prices. Weights are shown relative to the largest position. ' +
+      'Holdings are published as of the valuation date above.</div>' +
+  '</div>';
+}
+
+/* ---------- sector rotation ---------- */
+function sectorHTML(){
+  var sh = DATA.sector_history;
+  var folded = (sh.folded_into_other || []).join(', ');
+  return '<div class="card">' +
+    '<div class="title-row"><div>' +
+      '<div class="card-title">20-Year Sector Composition</div>' +
+      '<div class="card-sub">How the strategy adapts across market regimes · the shaded ' +
+        '“cash” band is equity exposure the risk layer pulled out of the market' +
+        (folded ? ' · smallest sleeves folded into “Other”: ' + folded : '') + '</div>' +
+    '</div></div>' +
+    '<div class="chart-box short"><canvas id="sectorChart"></canvas></div>' +
+  '</div>';
+}
+
+function buildSectorChart(){
+  var el = document.getElementById('sectorChart');
+  if(!el) return;
+  var sh = DATA.sector_history;
+  // A category axis keeps the 248 monthly bars flush against each other. On a time axis
+  // Chart.js sizes each bar from the date delta, which left ragged gaps between months.
+  var labels = sh.months.slice();
+
+  var datasets = sh.sectors.map(function(name, i){
+    return {
+      label: name,
+      data: sh.weights[name].map(function(w){ return w * 100; }),
+      backgroundColor: cssVar('--sector-' + ((i % 8) + 1)),
+      borderWidth: 0, categoryPercentage: 1.0, barPercentage: 1.0
+    };
+  });
+
+  // Whatever the sector sleeves do not account for is cash. Plotting it explicitly
+  // matters: the book drops to 11% invested in Apr 2020 and ~14% in late 2008, and
+  // that de-risking is what produces the shallow drawdown quoted above. Left implicit
+  // it just looks like a hole in the data.
+  datasets.push({
+    label: 'Cash / not invested',
+    data: labels.map(function(_m, i){
+      var invested = sh.sectors.reduce(function(s, name){ return s + sh.weights[name][i]; }, 0);
+      return Math.max(0, (1 - invested) * 100);
+    }),
+    backgroundColor: cssVar('--sector-cash'),
+    borderWidth: 0, categoryPercentage: 1.0, barPercentage: 1.0
+  });
+
+  charts.sector = new Chart(el.getContext('2d'), {
+    type: 'bar',
+    data: {labels: labels, datasets: datasets},
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: {mode: 'index', intersect: false},
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, padding: 12, font: {size: 11}}
+        },
+        tooltip: {
+          backgroundColor: cssVar('--surface'),
+          titleColor: cssVar('--text-primary'),
+          bodyColor: cssVar('--text-secondary'),
+          borderColor: cssVar('--border'), borderWidth: 1, padding: 10,
+          callbacks: {
+            title: function(items){ return longMonth(String(items[0].label)); },
+            label: function(ctx){ return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%'; }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'category', stacked: true,
+          grid: {display: false}, border: {color: cssVar('--border')},
+          ticks: {
+            color: cssVar('--text-muted'), maxRotation: 0, autoSkip: false, font: {size: 11},
+            // Label only Januaries, so the axis reads as a clean year ruler.
+            callback: function(_v, i){
+              var m = labels[i];
+              return m && m.slice(5) === '01' ? m.slice(0, 4) : '';
             }
           }
         },
         y: {
-          stacked: true,
-          max: 100,
-          grid: {color: GRID, drawTicks: false},
-          border: {display: false},
-          ticks: {callback: v => v + '%'}
-        }
-      },
-      plugins: {
-        legend: {display: false},
-        tooltip: {
-          callbacks: {
-            label: ctx => ctx.parsed.y < 0.05 ? null : ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
-            footer(items) {
-              const total = items.reduce((a, i) => a + i.parsed.y, 0);
-              return `Total equity exposure: ${total.toFixed(1)}%`;
-            }
-          }
+          stacked: true, max: 100, grid: {color: cssVar('--border')},
+          border: {color: cssVar('--border')},
+          ticks: {color: cssVar('--text-muted'), font: {size: 11},
+                  callback: function(v){ return v + '%'; }}
         }
       }
     }
   });
+}
 
-  const legend = document.getElementById('sector-legend');
-  legend.innerHTML = '';
-  sh.sectors.forEach((name, i) => {
-    const el = document.createElement('span');
-    el.innerHTML = `<i class="swatch" style="background:${SECTOR_COLORS[i % SECTOR_COLORS.length]}"></i>${name}`;
-    legend.appendChild(el);
+/* ---------- heatmap ---------- */
+function heatColour(r){
+  var v = r * 100;
+  if(v > 0){
+    if(v >= 8) return 'var(--heatmap-pos5)';
+    if(v >= 6) return 'var(--heatmap-pos4)';
+    if(v >= 4) return 'var(--heatmap-pos3)';
+    if(v >= 2) return 'var(--heatmap-pos2)';
+    return 'var(--heatmap-pos1)';
+  }
+  if(v < 0){
+    if(v <= -8) return 'var(--heatmap-neg5)';
+    if(v <= -6) return 'var(--heatmap-neg4)';
+    if(v <= -4) return 'var(--heatmap-neg3)';
+    if(v <= -2) return 'var(--heatmap-neg2)';
+    return 'var(--heatmap-neg1)';
+  }
+  return 'var(--bg-secondary)';
+}
+
+function heatmapHTML(){
+  var mr = DATA.monthly_returns;
+  var byMonth = {};
+  mr.forEach(function(r){ byMonth[r.month] = r; });
+  var years = mr.map(function(r){ return parseInt(r.month.slice(0, 4), 10); });
+  var y0 = Math.min.apply(null, years), y1 = Math.max.apply(null, years);
+
+  var cells = '<div class="hm" style="grid-template-columns:44px repeat(12,1fr) 68px">';
+  cells += '<div></div>';
+  MONTHS.forEach(function(m){ cells += '<div class="hm-h">' + m + '</div>'; });
+  cells += '<div class="hm-h">Year</div>';
+
+  for(var y = y0; y <= y1; y++){
+    cells += '<div class="hm-y">' + y + '</div>';
+    var compound = 1, seen = 0;
+    for(var m = 1; m <= 12; m++){
+      var key = y + '-' + (m < 10 ? '0' + m : m);
+      var row = byMonth[key];
+      if(!row){ cells += '<div class="hm-empty"></div>'; continue; }
+      compound *= (1 + row.strategy); seen++;
+      var title = MONTHS[m - 1] + ' ' + y +
+        ' — Strategy: ' + pct(row.strategy, 1) + ' | SPY: ' + pct(row.spy, 1);
+      cells += '<div class="hm-cell" title="' + title + '">' +
+        '<i style="background:' + heatColour(row.strategy) + '"></i>' +
+        '<i style="background:' + heatColour(row.spy) + '"></i>' +
+      '</div>';
+    }
+    if(seen){
+      var annual = compound - 1;
+      var cls = annual >= 0 ? 'win' : 'neg';
+      var style = annual >= 0
+        ? 'background:var(--positive-soft);color:var(--positive)'
+        : 'background:var(--negative-soft);color:var(--negative)';
+      cells += '<div class="hm-pill" style="' + style + '" title="' + y +
+        (seen < 12 ? ' (partial year, ' + seen + ' months)' : '') + '">' + pct(annual, 1) + '</div>';
+    } else {
+      cells += '<div></div>';
+    }
+  }
+  cells += '</div>';
+
+  return '<div class="card">' +
+    '<div class="title-row"><div>' +
+      '<div class="card-title">Monthly Performance — Portfolio vs S&amp;P 500</div>' +
+      '<div class="card-sub">Upper bar = strategy, lower bar = SPY · hover any cell for exact figures</div>' +
+    '</div></div>' +
+    '<div class="scroll-x">' + cells + '</div>' +
+    '<div class="hm-legend">' +
+      '<span style="display:flex;align-items:center;gap:8px">' + MINUS + '10%+' +
+        '<span class="grad" id="hmGrad"></span>+10%+</span>' +
+      '<span style="display:flex;align-items:center;gap:8px">' +
+        '<span style="display:inline-flex;flex-direction:column;gap:1px;width:22px">' +
+          '<i style="display:block;height:8px;border-radius:2px;background:var(--heatmap-pos4)"></i>' +
+          '<i style="display:block;height:8px;border-radius:2px;background:var(--heatmap-pos1)"></i>' +
+        '</span>each cell stacks strategy over SPY</span>' +
+      '<span>Year column compounds the strategy’s months in that calendar year.</span>' +
+    '</div>' +
+  '</div>';
+}
+
+function paintHeatmap(){
+  var mr = DATA.monthly_returns;
+  var byMonth = {};
+  mr.forEach(function(r){ byMonth[r.month] = r; });
+  // Re-resolve var() colours after a theme flip (inline vars follow automatically,
+  // but the gradient bar is painted from computed values).
+  var g = document.getElementById('hmGrad');
+  if(g){
+    g.style.background = 'linear-gradient(90deg,' + cssVar('--heatmap-neg5') + ',' +
+      cssVar('--heatmap-neg2') + ',' + cssVar('--bg-secondary') + ',' +
+      cssVar('--heatmap-pos2') + ',' + cssVar('--heatmap-pos5') + ')';
+  }
+}
+
+/* ---------- about ---------- */
+function aboutHTML(){
+  var n = DATA.notes || {};
+  return '<div class="card">' +
+    '<button class="acc-btn" id="aboutBtn" aria-expanded="false">' +
+      '<span>About This Strategy</span>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" ' +
+        'stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
+    '</button>' +
+    '<div class="acc-body" id="aboutBody">' +
+      '<h4>Method</h4><p>' + (n.strategy || '') + '</p>' +
+      '<h4>Benchmark</h4><p>' + (n.benchmark || '') + '</p>' +
+      '<h4>Drawdown</h4><p>' + (n.drawdown || '') + '</p>' +
+      '<h4>Sector history</h4><p>' + (n.sector_history || '') + '</p>' +
+      '<h4>Live account</h4><p>' + (n.live || '') + '</p>' +
+      '<h4>Reading the chart</h4>' +
+      '<ul>' +
+        '<li><b>Backtest</b> — certified walk-forward research window, drawn dashed.</li>' +
+        '<li><b>Simulation</b> — the ' + DATA.headline.window_end.slice(0, 4) +
+          ' out-of-sample continuation, drawn amber.</li>' +
+        '<li><b>Live paper trading</b> — the funded account, rebased onto the simulated ' +
+          'curve so both fit one axis. True dollar NAV is reported in the header and hero card.</li>' +
+      '</ul>' +
+      '<h4>Data as of</h4><p>Snapshot generated ' + (DATA.generated_at || DATA.as_of) + '.</p>' +
+    '</div>' +
+  '</div>';
+}
+
+function wireAccordion(){
+  var btn = document.getElementById('aboutBtn');
+  var body = document.getElementById('aboutBody');
+  if(!btn) return;
+  btn.addEventListener('click', function(){
+    var open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!open));
+    body.classList.toggle('open', !open);
   });
-
-  if (sh.folded_into_other && sh.folded_into_other.length) {
-    document.getElementById('sector-note').textContent =
-      `"Other" also absorbs the smallest sleeves (${sh.folded_into_other.join(', ')}), ` +
-      `which keeps the palette to eight reliably distinguishable colours.`;
-  }
+  paintHeatmap();
 }
-
-function heatColor(v) {
-  const t = Math.max(-1, Math.min(1, v / 0.10));
-  return t >= 0 ? mix('#232a3a', '#15803d', t) : mix('#232a3a', '#b91c1c', -t);
-}
-
-function renderHeatmap(s) {
-  const track = document.getElementById('heat');
-  track.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  s.monthly_returns.forEach((r, i) => {
-    const [year, mon] = r.month.split('-');
-
-    const tick = document.createElement('div');
-    tick.className = 'heat-year';
-    // Label every January, plus the very first month so the series never opens unlabelled.
-    tick.textContent = (mon === '01' || i === 0) ? year : '';
-    frag.appendChild(tick);
-
-    [['Portfolio', r.strategy], ['S&P 500', r.spy]].forEach(([who, val]) => {
-      const cell = document.createElement('div');
-      cell.className = 'heat-cell';
-      cell.style.background = heatColor(val);
-      cell.textContent = (val * 100).toFixed(1);
-      cell.title = `${who} · ${r.month}: ${signedPct(val)}`;
-      frag.appendChild(cell);
-    });
-  });
-
-  track.appendChild(frag);
-}
-
-function renderHoldings(s) {
-  const h = s.holdings;
-  document.getElementById('hold-sub').textContent =
-    `As of ${h.last_rebalance || h.as_of} · T+30 reporting lag · Updated monthly`;
-
-  const live = s.live || {};
-  document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav) : '—';
-  const retEl = document.getElementById('l-ret');
-  if (live.since_inception_return != null) {
-    retEl.textContent = signedPct(live.since_inception_return);
-    retEl.style.color = live.since_inception_return >= 0 ? 'var(--green)' : 'var(--red)';
-  } else {
-    retEl.textContent = '—';
-  }
-  document.getElementById('l-days').textContent = live.days_live != null ? live.days_live : '—';
-
-  // Colour holdings by sector using the same validated slots as the rotation chart, so a
-  // sector reads as one colour across the whole page.
-  const order = (s.sector_history && s.sector_history.sectors) || [];
-  const colorFor = sector => {
-    const i = order.indexOf(sector);
-    return i >= 0 ? SECTOR_COLORS[i % SECTOR_COLORS.length] : '#8b93a7';
-  };
-
-  const box = document.getElementById('holdings');
-  box.innerHTML = '';
-  const max = Math.max(...h.positions.map(p => p.weight));
-  h.positions.forEach(p => {
-    const c = colorFor(p.sector);
-    const row = document.createElement('div');
-    row.className = 'holding';
-    row.innerHTML =
-      `<div class="tkr">${p.ticker}</div>` +
-      `<div class="co" title="${p.name}">${p.name}</div>` +
-      `<div><span class="chip" style="color:${c}">${p.sector}</span></div>` +
-      `<div class="wbar">` +
-        `<span class="track"><span class="fill" style="width:${(p.weight / max) * 100}%;background:${c}"></span></span>` +
-        `<span class="pct">${pct(p.weight, 1)}</span>` +
-      `</div>`;
-    box.appendChild(row);
-  });
-}
-
-/* ---------- boot ---------- */
-function fail(msg) {
-  document.getElementById('spinner').hidden = true;
-  document.getElementById('state-msg').textContent = msg;
-}
-
-async function boot() {
-  let snap;
-  try {
-    const res = await fetch('./portfolio_snapshot.json', {cache: 'no-store'});
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    snap = await res.json();
-  } catch (err) {
-    console.error('[dashboard] snapshot fetch failed', err);
-    fail('Dashboard updating… Please check back shortly.');
-    return;
-  }
-
-  try {
-    applyDefaults();
-    renderHeadline(snap);
-    renderPill(snap);
-    renderEquity(snap);
-    renderCrash(snap);
-    renderSectors(snap);
-    renderHeatmap(snap);
-    renderHoldings(snap);
-  } catch (err) {
-    console.error('[dashboard] render failed', err);
-    fail('Dashboard updating… Please check back shortly.');
-    return;
-  }
-
-  document.getElementById('state').hidden = true;
-  document.getElementById('hdr').hidden = false;
-  document.getElementById('main').hidden = false;
-  document.getElementById('ftr').hidden = false;
-}
-
-boot();
 </script>
 </body>
 </html>
