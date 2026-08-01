@@ -29,7 +29,7 @@
   --neutral-soft:rgba(148,163,184,.10);
   --chart-strategy:#1d4ed8; --chart-spy:rgba(148,163,184,.4); --chart-spy-fill:rgba(148,163,184,.08);
   --chart-backtest:#94a3b8; --chart-sim:#f59e0b;
-  --crash-fill:rgba(220,38,38,.04);
+  --crash-fill:rgba(220,38,38,.05);
   --heatmap-pos5:#14532d; --heatmap-pos4:#15803d; --heatmap-pos3:#16a34a; --heatmap-pos2:#4ade80; --heatmap-pos1:#bbf7d0;
   --heatmap-neg1:#fee2e2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#ef4444; --heatmap-neg4:#dc2626; --heatmap-neg5:#7f1d1d;
   --sector-1:#1d4ed8; --sector-2:#6d28d9; --sector-3:#059669; --sector-4:#f59e0b;
@@ -54,7 +54,7 @@ html[data-theme="dark"]{
   /* Lifted off the spec's #475569: on a #111 ground that reads as absent, and this line
      is the strategy's own 20-year record — it has to stay legible against the SPY grey. */
   --chart-backtest:#8a8a93; --chart-sim:#f59e0b;
-  --crash-fill:rgba(248,113,113,.05);
+  --crash-fill:rgba(248,113,113,.07);
   --heatmap-pos5:#065f46; --heatmap-pos4:#059669; --heatmap-pos3:#34d399; --heatmap-pos2:#6ee7b7; --heatmap-pos1:#d1fae5;
   --heatmap-neg1:#fef2f2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#f87171; --heatmap-neg4:#ef4444; --heatmap-neg5:#7f1d1d;
   --sector-1:#00d4ff; --sector-2:#bf7fff; --sector-3:#34d399; --sector-4:#fbbf24;
@@ -82,7 +82,17 @@ header{
 .hdr{max-width:1200px;margin:0 auto;padding:8px 24px;min-height:56px;
   display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.brand b{font-weight:700;font-size:1.1rem;letter-spacing:-.01em}
+.brand b{font-weight:700;font-size:1.1rem;letter-spacing:-.01em;color:var(--text-primary)}
+/* --accent and --purple already resolve to #1d4ed8→#6d28d9 in light and #00d4ff→#bf7fff
+   in dark, so one rule covers both themes and cannot drift from the palette. Guarded by
+   @supports because the transparent fill would erase the wordmark if the clip is ignored. */
+@supports ((-webkit-background-clip:text) or (background-clip:text)){
+  .brand b{
+    background:linear-gradient(135deg,var(--accent),var(--purple));
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;
+  }
+}
 .brand span{color:var(--text-muted);font-size:.78rem}
 .nav-right{display:flex;align-items:center;gap:12px}
 .nav-badge{
