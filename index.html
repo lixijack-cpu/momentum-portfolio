@@ -1,1063 +1,854 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="light dark" />
-<title>Systematic Equity — Long-Only Multi-Factor Strategy</title>
-<meta name="description" content="Walk-forward out-of-sample results for a long-only, multi-factor systematic equity strategy, net of costs, benchmarked against SPY." />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Systematic Equity — Quant Portfolio Dashboard</title>
+<meta name="description" content="Walk-forward out-of-sample results for a long-only multi-factor systematic equity strategy, net of costs, benchmarked against SPY.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
 :root{
-  --bg:#fafaf8; --bg-secondary:#f1f5f9; --surface:#ffffff; --surface-hover:#f8fafc;
+  --bg:#fafaf8; --bg-2:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc;
   --border:#e2e8f0;
-  --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
-  --shadow-hover:0 8px 32px rgba(0,0,0,.12);
-  --text-primary:#0f172a; --text-secondary:#475569; --text-muted:#94a3b8;
-  --accent:#1d4ed8; --accent-soft:rgba(29,78,216,.08);
-  --purple:#6d28d9;
-  --positive:#059669; --positive-soft:rgba(5,150,105,.08);
-  --negative:#dc2626; --negative-soft:rgba(220,38,38,.08);
-  --amber:#b45309; --amber-soft:rgba(180,83,9,.10);
-  --neutral-soft:rgba(148,163,184,.10);
-  --chart-strategy:#1d4ed8; --chart-spy:rgba(148,163,184,.4); --chart-spy-fill:rgba(148,163,184,.08);
-  --chart-backtest:#94a3b8; --chart-sim:#f59e0b;
-  --crash-fill:rgba(220,38,38,.05);
-  --heatmap-pos5:#14532d; --heatmap-pos4:#15803d; --heatmap-pos3:#16a34a; --heatmap-pos2:#4ade80; --heatmap-pos1:#bbf7d0;
-  --heatmap-neg1:#fee2e2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#ef4444; --heatmap-neg4:#dc2626; --heatmap-neg5:#7f1d1d;
-  --sector-1:#1d4ed8; --sector-2:#6d28d9; --sector-3:#059669; --sector-4:#f59e0b;
-  --sector-5:#ef4444; --sector-6:#0891b2; --sector-7:#65a30d; --sector-8:#475569;
-  --sector-cash:rgba(148,163,184,.22);
-  --hold-finance:#1d4ed8; --hold-manufacturing:#6d28d9; --hold-healthcare:#059669;
-  --hold-durables:#b45309; --hold-other:#475569;
+  --shadow:0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.10);
+  --text-1:#0f172a; --text-2:#475569; --text-3:#94a3b8;
+  --blue:#1d4ed8; --blue-soft:rgba(29,78,216,.08);
+  --purple:#6d28d9; --purple-soft:rgba(109,40,217,.08);
+  --green:#059669; --green-soft:rgba(5,150,105,.08);
+  --red:#dc2626; --red-soft:rgba(220,38,38,.06);
+  --amber:#b45309; --amber-soft:rgba(180,83,9,.08);
+  --grey-soft:rgba(148,163,184,.10);
+  --chart-1:#1d4ed8; --chart-backtest:#94a3b8; --chart-sim:#f59e0b;
+  --chart-spy:rgba(148,163,184,.35); --chart-spy-bg:rgba(148,163,184,.07);
+  --crash-bg:rgba(220,38,38,.04);
+  --hm-5p:#14532d; --hm-4p:#15803d; --hm-3p:#16a34a; --hm-2p:#4ade80; --hm-1p:#bbf7d0;
+  --hm-1n:#fee2e2; --hm-2n:#fca5a5; --hm-3n:#ef4444; --hm-4n:#dc2626; --hm-5n:#7f1d1d;
+  --sec-1:#1d4ed8; --sec-2:#6d28d9; --sec-3:#059669; --sec-4:#b45309;
+  --sec-5:#dc2626; --sec-6:#0891b2; --sec-7:#65a30d; --sec-8:#475569;
+  --sec-cash:rgba(148,163,184,.22);
 }
 html[data-theme="dark"]{
-  --bg:#111111; --bg-secondary:#161616; --surface:#1c1c1c; --surface-hover:#222222;
+  --bg:#111111; --bg-2:#161616; --surface:#1c1c1c; --surface-2:#222222;
   --border:#2a2a2a;
-  --shadow:0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
-  --shadow-hover:0 8px 32px rgba(0,212,255,.08);
-  --text-primary:#f4f4f5; --text-secondary:#a1a1aa; --text-muted:#52525b;
-  --accent:#00d4ff; --accent-soft:rgba(0,212,255,.08);
-  --purple:#bf7fff;
-  --positive:#84cc16; --positive-soft:rgba(132,204,22,.08);
-  --negative:#f87171; --negative-soft:rgba(248,113,113,.08);
-  --amber:#f59e0b; --amber-soft:rgba(245,158,11,.12);
-  --neutral-soft:rgba(161,161,170,.10);
-  --chart-strategy:#00d4ff; --chart-spy:rgba(161,161,170,.3); --chart-spy-fill:rgba(161,161,170,.06);
-  /* Lifted off the spec's #475569: on a #111 ground that reads as absent, and this line
-     is the strategy's own 20-year record — it has to stay legible against the SPY grey. */
-  --chart-backtest:#8a8a93; --chart-sim:#f59e0b;
-  --crash-fill:rgba(248,113,113,.07);
-  --heatmap-pos5:#065f46; --heatmap-pos4:#059669; --heatmap-pos3:#34d399; --heatmap-pos2:#6ee7b7; --heatmap-pos1:#d1fae5;
-  --heatmap-neg1:#fef2f2; --heatmap-neg2:#fca5a5; --heatmap-neg3:#f87171; --heatmap-neg4:#ef4444; --heatmap-neg5:#7f1d1d;
-  --sector-1:#00d4ff; --sector-2:#bf7fff; --sector-3:#34d399; --sector-4:#fbbf24;
-  --sector-5:#f87171; --sector-6:#22d3ee; --sector-7:#a3e635; --sector-8:#71717a;
-  --sector-cash:rgba(161,161,170,.16);
-  --hold-finance:#00d4ff; --hold-manufacturing:#bf7fff; --hold-healthcare:#34d399;
-  --hold-durables:#f59e0b; --hold-other:#71717a;
+  --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 16px rgba(0,0,0,.4);
+  --shadow-lg:0 8px 32px rgba(0,212,255,.07);
+  --text-1:#f4f4f5; --text-2:#a1a1aa; --text-3:#52525b;
+  --blue:#00d4ff; --blue-soft:rgba(0,212,255,.08);
+  --purple:#bf7fff; --purple-soft:rgba(191,127,255,.10);
+  --green:#84cc16; --green-soft:rgba(132,204,22,.08);
+  --red:#f87171; --red-soft:rgba(248,113,113,.08);
+  --amber:#f59e0b; --amber-soft:rgba(245,158,11,.10);
+  --grey-soft:rgba(161,161,170,.10);
+  --chart-1:#00d4ff; --chart-backtest:#8a8a93; --chart-sim:#f59e0b;
+  --chart-spy:rgba(161,161,170,.25); --chart-spy-bg:rgba(161,161,170,.05);
+  --crash-bg:rgba(248,113,113,.06);
+  --hm-5p:#065f46; --hm-4p:#059669; --hm-3p:#34d399; --hm-2p:#6ee7b7; --hm-1p:#d1fae5;
+  --hm-1n:#fef2f2; --hm-2n:#fca5a5; --hm-3n:#f87171; --hm-4n:#ef4444; --hm-5n:#991b1b;
+  --sec-1:#00d4ff; --sec-2:#bf7fff; --sec-3:#34d399; --sec-4:#f59e0b;
+  --sec-5:#f87171; --sec-6:#22d3ee; --sec-7:#a3e635; --sec-8:#71717a;
+  --sec-cash:rgba(161,161,170,.16);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  background:var(--bg); color:var(--text-primary);
-  -webkit-font-smoothing:antialiased; line-height:1.5;
-  transition:background .3s ease, color .2s ease;
+  background:var(--bg); color:var(--text-1); line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  transition:background .3s, color .2s;
 }
-.wrap{max-width:1200px;margin:0 auto;padding:0 24px 64px}
+.wrap{max-width:1240px;margin:0 auto;padding:0 28px 80px}
 
-/* ---------- header ---------- */
-header{
-  position:sticky; top:0; z-index:100; min-height:56px;
+/* ---------------- header ---------------- */
+.hdr{
+  position:sticky; top:0; z-index:100;
   background:var(--surface); border-bottom:1px solid var(--border);
-  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-  transition:background .3s ease, border-color .3s ease;
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  transition:background .3s, border-color .3s;
 }
-.hdr{max-width:1200px;margin:0 auto;padding:8px 24px;min-height:56px;
-  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.brand b{font-weight:700;font-size:1.1rem;letter-spacing:-.01em;color:var(--text-primary)}
-/* --accent and --purple already resolve to #1d4ed8→#6d28d9 in light and #00d4ff→#bf7fff
-   in dark, so one rule covers both themes and cannot drift from the palette. Guarded by
-   @supports because the transparent fill would erase the wordmark if the clip is ignored. */
+.hdr-inner{
+  max-width:1240px; margin:0 auto; padding:0 28px; min-height:60px;
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+}
+.brand{display:flex;align-items:baseline;flex-wrap:wrap}
+.brand-name{
+  font-weight:700; font-size:1.15rem; letter-spacing:-.02em; color:var(--text-1);
+}
 @supports ((-webkit-background-clip:text) or (background-clip:text)){
-  .brand b{
-    background:linear-gradient(135deg,var(--accent),var(--purple));
-    -webkit-background-clip:text;background-clip:text;
+  .brand-name{
+    background:linear-gradient(135deg,var(--blue),var(--purple));
+    -webkit-background-clip:text; background-clip:text;
     -webkit-text-fill-color:transparent;
   }
 }
-.brand span{color:var(--text-muted);font-size:.78rem}
+.brand-tag{font-size:.75rem;color:var(--text-3);margin-left:10px}
 .nav-right{display:flex;align-items:center;gap:12px}
-.nav-badge{
-  display:inline-flex;align-items:center;gap:8px;
-  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
-  padding:6px 14px; font-size:.85rem; font-weight:500; color:var(--text-primary);
-  white-space:nowrap;
+.nav-pill{
+  display:inline-flex; align-items:center; gap:8px;
+  background:var(--blue-soft); border:1px solid var(--blue); border-radius:999px;
+  padding:6px 14px; font-size:.82rem; font-weight:500; color:var(--text-1);
+  white-space:nowrap; font-variant-numeric:tabular-nums;
 }
-.pulse{width:8px;height:8px;border-radius:50%;background:var(--positive);
-  animation:pulse 2s ease-in-out infinite;flex:none}
-.pulse.neg{background:var(--negative)}
-@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.65}}
-#themeToggle{
-  width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
-  background:var(--surface);cursor:pointer;font-size:1.1rem;line-height:1;
+.pulse-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;
+  background:var(--green);animation:pulse 2s ease-in-out infinite}
+.pulse-dot.neg{background:var(--red)}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.7}}
+.theme-btn{
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface);cursor:pointer;font-size:1rem;line-height:1;color:inherit;
   display:flex;align-items:center;justify-content:center;
-  transition:transform .4s ease, background .2s ease, border-color .2s ease;
-  color:inherit;
+  transition:transform .4s, background .2s, border-color .2s;
 }
-#themeToggle:hover{background:var(--surface-hover)}
-#themeToggle.spin{transform:rotate(180deg)}
+.theme-btn:hover{background:var(--surface-2);transform:rotate(20deg)}
 
-/* ---------- cards ---------- */
-.card{
-  background:var(--surface); border:1px solid var(--border); border-radius:12px;
-  box-shadow:var(--shadow); padding:24px; margin-top:20px;
-  transition:background .3s ease, border-color .3s ease, transform .2s ease, box-shadow .2s ease;
-}
-.card-title{font-weight:600;font-size:1.05rem;letter-spacing:-.01em}
-.card-sub{color:var(--text-secondary);font-size:.82rem;margin-top:3px}
-.title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
-.title-stat{font-size:.82rem;color:var(--text-secondary);text-align:right}
-.title-stat b{color:var(--text-primary);font-weight:600}
-
-/* ---------- hero ---------- */
-.hero{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:24px}
+/* ---------------- hero stats ---------------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:28px}
 .stat{
-  background:var(--surface); border:1px solid var(--border); border-radius:12px;
-  padding:20px 24px; box-shadow:var(--shadow);
-  transition:transform .2s ease, box-shadow .2s ease, background .3s ease, border-color .3s ease;
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:22px 24px; box-shadow:var(--shadow); border-left:3px solid transparent;
+  transition:transform .2s, box-shadow .2s, background .3s, border-color .3s;
 }
-.stat:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover)}
-.stat.a{border-left:3px solid var(--accent)}
-.stat.p{border-left:3px solid var(--purple)}
-.stat.m{border-left:3px solid var(--amber)}
-.stat.l{border-left:3px solid var(--positive)}
-.stat.l.neg{border-left-color:var(--negative)}
-.stat-label{text-transform:uppercase;font-size:.68rem;letter-spacing:.1em;color:var(--text-muted);font-weight:500}
-.stat-num{font-size:2.6rem;font-weight:900;letter-spacing:-.02em;line-height:1.15;margin:6px 0 2px;
-  font-variant-numeric:tabular-nums}
-.stat-sub{font-size:.8rem;color:var(--text-secondary)}
+.stat:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+.stat.blue{border-left-color:var(--blue)}
+.stat.purple{border-left-color:var(--purple)}
+.stat.amber{border-left-color:var(--amber)}
+.stat.green{border-left-color:var(--green)}
+.stat.red-left{border-left-color:var(--red)}
+.stat-lbl{font-size:.65rem;font-weight:500;text-transform:uppercase;
+  letter-spacing:.12em;color:var(--text-3)}
+.stat-num{font-size:2.5rem;font-weight:900;letter-spacing:-.025em;line-height:1.1;
+  margin:7px 0 3px;font-variant-numeric:tabular-nums}
+.stat-sub{font-size:.78rem;color:var(--text-2)}
 
-/* ---------- chart ---------- */
-.chart-box{position:relative;height:440px}
-.chart-box.short{height:320px}
-.chart-hint{text-align:center;font-size:.75rem;color:var(--text-muted);margin-top:12px}
-#tooltip{
-  position:absolute;pointer-events:none;opacity:0;transition:opacity .12s ease;
-  background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;
-  box-shadow:var(--shadow-hover);font-size:.8rem;z-index:20;min-width:170px;
+/* ---------------- cards ---------------- */
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:26px; box-shadow:var(--shadow); margin-top:20px;
+  transition:background .3s, border-color .3s;
 }
-#tooltip .tt-date{font-weight:600;margin-bottom:6px;color:var(--text-primary)}
-#tooltip .tt-row{display:flex;justify-content:space-between;gap:16px;font-variant-numeric:tabular-nums}
-#tooltip .tt-row span:first-child{color:var(--text-secondary)}
+.card-hdr{display:flex;align-items:flex-end;justify-content:space-between;
+  margin-bottom:20px;gap:12px;flex-wrap:wrap}
+.card-title{font-size:1rem;font-weight:600;color:var(--text-1)}
+.card-sub{font-size:.78rem;color:var(--text-2);margin-top:2px}
+.card-stat{font-size:.8rem;color:var(--text-2);text-align:right}
+.card-stat b{color:var(--text-1);font-weight:600}
 
-/* ---------- crash table ---------- */
+/* ---------------- charts ---------------- */
+.chart-box{position:relative;height:420px}
+.chart-box.short{height:300px}
+.chart-hint{text-align:center;font-size:.74rem;color:var(--text-3);margin-top:14px}
+#tt{
+  position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:14px;min-width:180px;box-shadow:var(--shadow-lg);font-size:.8rem;z-index:20;
+}
+#tt .tt-d{font-weight:600;margin-bottom:7px;color:var(--text-1)}
+#tt .tt-r{display:flex;justify-content:space-between;gap:18px;
+  font-variant-numeric:tabular-nums;line-height:1.7}
+#tt .tt-r span:first-child{color:var(--text-2)}
+
+/* ---------------- crash table ---------------- */
 .scroll-x{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:620px}
-thead th{
-  text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;
-  color:var(--text-muted);font-weight:500;padding:0 12px 10px 0;border-bottom:1px solid var(--border);
-}
-tbody td{padding:12px 12px 12px 0;border-bottom:1px solid var(--border);vertical-align:middle}
-tbody tr{transition:background .15s ease}
-tbody tr.data-row:hover{background:var(--surface-hover)}
-.period{font-weight:600;color:var(--text-primary)}
-.pill{display:inline-block;border-radius:6px;padding:3px 10px;font-weight:600;font-size:.82rem;
-  font-variant-numeric:tabular-nums;white-space:nowrap}
-.pill.neg{background:var(--negative-soft);color:var(--negative)}
-.pill.spy{background:var(--neutral-soft);color:var(--text-secondary)}
-.pill.win{background:var(--positive-soft);color:var(--positive)}
-.pill.lose{background:var(--amber-soft);color:var(--amber)}
-.bars{min-width:180px}
-.bar{height:6px;border-radius:3px}
-.bar-strategy{background:var(--negative);margin-bottom:2px}
-.bar-spy{background:var(--text-muted)}
-.bar-legend{font-size:.66rem;color:var(--text-muted);margin-top:4px}
-.note-row td{padding:0 0 12px;border-bottom:1px solid var(--border);
+table{border-collapse:collapse;width:100%;font-size:.86rem;min-width:640px}
+thead th{text-align:left;font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--text-3);font-weight:500;padding:0 14px 11px 0;border-bottom:1px solid var(--border)}
+tbody td{padding:13px 14px 13px 0;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr.r:hover{background:var(--surface-2)}
+tbody tr.r{transition:background .15s}
+.per{font-weight:600;color:var(--text-1)}
+.per small{display:block;font-size:.7rem;color:var(--text-3);font-weight:400}
+.pill{display:inline-block;border-radius:7px;padding:3px 10px;font-weight:600;
+  font-size:.8rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill.red{background:var(--red-soft);color:var(--red)}
+.pill.grey{background:var(--grey-soft);color:var(--text-2)}
+.pill.green{background:var(--green-soft);color:var(--green)}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}
+.bars{min-width:190px}
+.bar{height:5px;border-radius:3px}
+.bar.s{background:var(--red);margin-bottom:3px}
+.bar.b{background:var(--border)}
+.bar-cap{font-size:.65rem;color:var(--text-3);margin-top:5px}
+.note td{padding:0 0 13px;border-bottom:1px solid var(--border);
   color:var(--amber);font-size:.75rem;font-style:italic}
 
-/* ---------- holdings ---------- */
-.holdings{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+/* ---------------- holdings ---------------- */
+.holdings-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
 .hold{
-  background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;
-  border-left:3px solid var(--hold-other);
-  opacity:0;animation:fadeIn .4s ease forwards;
-  transition:background .3s ease,border-color .3s ease,transform .2s ease,box-shadow .2s ease;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:12px;
+  padding:16px 18px; border-left:3px solid var(--text-3);
+  opacity:0; animation:fadeUp .4s ease forwards;
+  transition:background .3s, border-color .3s, transform .2s, box-shadow .2s;
 }
-.hold:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover)}
-@keyframes fadeIn{to{opacity:1}}
-.hold-top{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
-.hold-tkr{font-weight:700;font-size:1rem;letter-spacing:-.01em}
-.hold-name{font-size:.85rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.chip{font-size:.65rem;padding:2px 8px;border-radius:999px;background:var(--bg-secondary);
-  color:var(--text-secondary);white-space:nowrap;flex:none}
-.hold-mid{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px;
+.hold:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.h-r1{display:flex;align-items:baseline;gap:9px;margin-bottom:6px}
+.h-tkr{font-weight:700;font-size:.95rem;color:var(--text-1)}
+.h-co{font-size:.82rem;color:var(--text-2);flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.68rem;
+  font-weight:500;text-transform:uppercase;letter-spacing:.06em;flex:none}
+.h-r2{font-size:.82rem;color:var(--text-2);font-variant-numeric:tabular-nums}
+.wbar{height:4px;margin-top:10px;background:var(--border);border-radius:2px;overflow:hidden}
+.wbar>i{display:block;height:4px;border-radius:2px;background:var(--blue);
+  transition:width .8s ease}
+.wlbl{font-size:.7rem;color:var(--text-3);text-align:right;margin-top:3px;
   font-variant-numeric:tabular-nums}
-.hold-val{font-weight:600;font-size:.95rem}
-.hold-shares{font-size:.78rem;color:var(--text-muted)}
-.wbar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex:1}
-.wbar>div{height:4px;border-radius:2px}
-.hold-bot{display:flex;align-items:center;gap:10px}
-.wpct{font-size:.75rem;color:var(--text-muted);font-variant-numeric:tabular-nums;flex:none}
-.summary{text-align:right;color:var(--text-secondary);font-size:.82rem;margin-top:14px;
+.h-total{text-align:right;font-size:.8rem;color:var(--text-2);margin-top:16px;
   font-variant-numeric:tabular-nums}
-.disclaimer{font-size:.75rem;color:var(--text-muted);font-style:italic;margin-top:8px}
+.h-note{font-size:.74rem;color:var(--text-3);font-style:italic;margin-top:7px}
 
-/* ---------- heatmap ---------- */
-.hm{display:grid;gap:2px;min-width:760px;font-variant-numeric:tabular-nums}
-.hm-h{font-size:.65rem;color:var(--text-muted);text-align:center;font-weight:500;padding-bottom:2px}
-.hm-y{font-size:.72rem;color:var(--text-muted);text-align:right;padding-right:8px;
+/* ---------------- heatmap ---------------- */
+.hm{display:grid;grid-template-columns:38px repeat(12,1fr) 60px;gap:2px;min-width:780px}
+.hm-h{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--text-3);text-align:center;padding-bottom:3px}
+.hm-yr{text-align:right;padding-right:6px;font-size:.7rem;color:var(--text-3);
   display:flex;align-items:center;justify-content:flex-end}
-.hm-cell{display:flex;flex-direction:column;gap:1px}
-.hm-cell i{display:block;height:14px;border-radius:2px}
-.hm-empty{height:29px;background:var(--bg-secondary);border-radius:2px}
-.hm-pill{font-size:.7rem;font-weight:600;border-radius:4px;padding:2px 6px;text-align:center;
-  display:flex;align-items:center;justify-content:center;margin-left:6px;white-space:nowrap}
-.hm-legend{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:16px;
-  font-size:.72rem;color:var(--text-muted)}
-.grad{width:180px;height:10px;border-radius:5px}
-.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.hm-c{display:flex;flex-direction:column;gap:1px}
+.hm-c i{display:block;height:13px;border-radius:2px}
+.hm-x{height:27px;background:var(--bg-2);border-radius:2px}
+.hm-p{font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;margin-left:6px;
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.hm-lg{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-top:18px;
+  font-size:.72rem;color:var(--text-3)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;
+  vertical-align:-1px}
+.grad{width:170px;height:9px;border-radius:5px}
 
-/* ---------- about / footer ---------- */
-.acc-btn{
-  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
-  background:none;border:0;cursor:pointer;color:var(--text-primary);
-  font-family:inherit;font-size:1.05rem;font-weight:600;padding:0;text-align:left;
-}
-.acc-btn svg{transition:transform .3s ease;flex:none;stroke:var(--text-muted)}
+/* ---------------- about ---------------- */
+.acc-btn{width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:18px 0;border:none;background:none;cursor:pointer;font-weight:600;
+  color:var(--text-1);font-family:inherit;font-size:1rem;
+  border-top:1px solid var(--border);text-align:left}
+.acc-btn svg{transition:transform .3s;flex:none;stroke:var(--text-3)}
 .acc-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
-.acc-body{display:none;padding-top:16px;color:var(--text-secondary);font-size:.88rem}
-.acc-body.open{display:block}
-.acc-body h4{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);
-  margin:16px 0 6px;font-weight:600}
-.acc-body p{margin-bottom:8px}
-.acc-body ul{margin:0 0 8px 18px}
-footer{
-  border-top:1px solid var(--border);margin-top:40px;padding:24px;
-  display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center;
-  max-width:1200px;margin-left:auto;margin-right:auto;
-  font-size:.76rem;color:var(--text-muted);
-}
-footer a{color:var(--text-secondary);text-decoration:none}
-footer a:hover{color:var(--accent)}
-.f-center{text-align:center}
-.f-right{display:flex;gap:14px;justify-content:flex-end;align-items:center}
-.f-right svg{fill:var(--text-muted);transition:fill .2s ease}
-.f-right a:hover svg{fill:var(--accent)}
-.loading{text-align:center;padding:64px 0;color:var(--text-muted)}
+.acc-c{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.acc-in{padding-bottom:20px;font-size:.86rem;color:var(--text-2)}
+.acc-in h4{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--text-3);margin:16px 0 6px;font-weight:600}
+.acc-in p{margin-bottom:8px}
+.acc-in ul{margin:0 0 8px 18px}
+
+/* ---------------- footer ---------------- */
+footer{max-width:1240px;margin:40px auto 0;padding:40px 28px 20px;
+  border-top:1px solid var(--border);
+  display:grid;grid-template-columns:1fr auto 1fr;gap:18px;align-items:center;
+  font-size:.78rem;color:var(--text-3)}
+footer a{color:var(--text-2);text-decoration:none;transition:color .2s}
+footer a:hover{color:var(--blue)}
+.f-mid{text-align:center}
+.f-end{display:flex;gap:16px;justify-content:flex-end;align-items:center}
+.f-end svg{fill:var(--text-3);transition:fill .2s}
+.f-end a:hover svg{fill:var(--blue)}
+.loading{text-align:center;padding:70px 0;color:var(--text-3)}
 
 @media (max-width:768px){
-  .wrap{padding:0 16px 48px}
-  .hdr{padding:8px 16px}
+  .wrap{padding:0 16px 56px}
+  .hdr-inner{padding:0 16px}
   .brand{width:100%}
-  .nav-right{width:100%;flex-wrap:wrap}
-  .hero{grid-template-columns:repeat(2,1fr);gap:12px}
-  .stat{padding:16px}
+  .nav-right{width:100%;flex-wrap:wrap;padding-bottom:8px}
+  .stats{grid-template-columns:repeat(2,1fr);gap:12px}
+  .stat{padding:16px 18px}
   .stat-num{font-size:1.9rem}
-  .chart-box,.chart-box.short{height:280px}
-  .holdings{grid-template-columns:1fr}
+  .holdings-grid{grid-template-columns:1fr}
   .card{padding:18px}
-  footer{grid-template-columns:1fr;text-align:center}
-  .f-right{justify-content:center}
+  .chart-box,.chart-box.short{height:280px}
+  footer{grid-template-columns:1fr;text-align:center;padding:32px 16px 20px}
+  .f-end{justify-content:center}
 }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="hdr">
+<header class="hdr">
+  <div class="hdr-inner">
     <div class="brand">
-      <b>Systematic Equity</b>
-      <span>· Long-Only · Multi-Factor · Monthly Rebalance</span>
+      <span class="brand-name">Systematic Equity</span>
+      <span class="brand-tag">Long-Only · Multi-Factor · Monthly Rebalance</span>
     </div>
     <div class="nav-right">
-      <div class="nav-badge" id="navBadge">
-        <span class="pulse" id="navDot"></span><span id="navText">Loading…</span>
-      </div>
-      <button id="themeToggle" type="button" aria-label="Toggle colour theme" title="Toggle light / dark">🌙</button>
+      <span class="nav-pill"><i class="pulse-dot" id="dot"></i><span id="navtxt">Loading…</span></span>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle colour theme">🌙</button>
     </div>
   </div>
 </header>
 
-<div class="wrap">
-  <div id="app"><div class="loading">Loading portfolio data…</div></div>
-</div>
+<main class="wrap" id="app">
+  <div class="loading">Loading portfolio data…</div>
+</main>
 
 <footer>
   <div>
-    © 2026 Jack Power · Systematic Equity Research<br />
+    © 2026 Jack Power · Systematic Equity Research<br>
     Past performance does not guarantee future results. Not investment advice.
   </div>
-  <div class="f-center">
-    <a href="https://lixijack-cpu.github.io/quant-fund" rel="noopener">lixijack-cpu.github.io/quant-fund</a>
-  </div>
-  <div class="f-right">
-    <a href="https://github.com/lixijack-cpu/quant-fund" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub">
-      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C18.4 4.5 19.4 4.8 19.4 4.8c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
+  <div class="f-mid"><a href="https://lixijack-cpu.github.io/quant-fund">lixijack-cpu.github.io/quant-fund</a></div>
+  <div class="f-end">
+    <a href="https://github.com/lixijack-cpu/quant-fund" target="_blank" rel="noopener" aria-label="GitHub">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C18.4 4.5 19.4 4.8 19.4 4.8c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg>
     </a>
-    <a href="https://linkedin.com/in/jackpower" target="_blank" rel="noopener" aria-label="LinkedIn" title="LinkedIn">
-      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05a3.74 3.74 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13ZM7.12 20.45H3.55V9h3.57v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z"/></svg>
+    <a href="https://linkedin.com/in/jackpower" target="_blank" rel="noopener" aria-label="LinkedIn">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05a3.74 3.74 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13ZM7.12 20.45H3.55V9h3.57v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z"/></svg>
     </a>
   </div>
 </footer>
 
 <script>
-/* ============================ theme ============================ */
-(function initTheme(){
-  var saved = null;
-  try { saved = localStorage.getItem('theme'); } catch(e){}
-  var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
+/* ===================== theme ===================== */
+const root = document.documentElement;
+const btn  = document.getElementById('theme-btn');
+(function bootTheme(){
+  let stored = null;
+  try { stored = localStorage.getItem('theme'); } catch(e){}
+  const sys = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  root.setAttribute('data-theme', stored || sys);
 })();
+function updateBtn(){
+  btn.textContent = root.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+}
+function isDark(){ return root.getAttribute('data-theme') === 'dark'; }
+function cv(name){ return getComputedStyle(root).getPropertyValue(name).trim(); }
 
-function cssVar(name){
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-function currentTheme(){
-  return document.documentElement.getAttribute('data-theme') || 'light';
-}
-function syncToggleIcon(){
-  document.getElementById('themeToggle').textContent = currentTheme() === 'dark' ? '☀️' : '🌙';
-}
-
-/* ============================ format helpers ============================ */
-var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-var MINUS = '−';
-
-function pct(x, dp){
-  dp = dp === undefined ? 2 : dp;
-  var v = x * 100;
-  return (v >= 0 ? '+' : MINUS) + Math.abs(v).toFixed(dp) + '%';
-}
-/* Multi-hundred-percent figures need thousands separators to stay readable. */
-function pctBig(x){
-  var v = x * 100;
-  return (v >= 0 ? '+' : MINUS) + Math.round(Math.abs(v)).toLocaleString('en-US') + '%';
-}
-function pctPlain(x, dp){
-  var v = x * 100;
-  return (v >= 0 ? '' : MINUS) + Math.abs(v).toFixed(dp === undefined ? 2 : dp) + '%';
-}
-function money(x, dp){
-  return '$' + Number(x).toLocaleString('en-US', {
-    minimumFractionDigits: dp === undefined ? 0 : dp,
-    maximumFractionDigits: dp === undefined ? 0 : dp
-  });
-}
-function monthLabel(ym){
-  var p = ym.split('-');
-  return MONTHS[parseInt(p[1], 10) - 1] + ' ' + p[0];
-}
-function longMonth(ym){
-  var names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  var p = ym.split('-');
-  return names[parseInt(p[1], 10) - 1] + ' ' + p[0];
-}
-function prettyDate(iso){
-  var p = iso.split('-');
-  return MONTHS[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
-}
-
-/* ============================ state ============================ */
-var DATA = null;
-var charts = {};
-
-fetch('./portfolio_snapshot.json', {cache: 'no-store'})
-  .then(function(r){
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  })
-  .then(function(json){
-    DATA = json;
-    render();
-    syncToggleIcon();
-  })
-  .catch(function(err){
-    document.getElementById('app').innerHTML =
-      '<div class="loading">Could not load portfolio data (' + err.message + ').</div>';
-  });
-
-document.getElementById('themeToggle').addEventListener('click', function(){
-  var next = currentTheme() === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
+btn.addEventListener('click', () => {
+  const next = isDark() ? 'light' : 'dark';
+  root.setAttribute('data-theme', next);
   try { localStorage.setItem('theme', next); } catch(e){}
-  syncToggleIcon();
-  this.classList.toggle('spin');
-  // Canvas colours are baked at draw time, so charts must be rebuilt on a theme flip.
-  setTimeout(rebuildCharts, 60);
+  updateBtn();
+  rebuildCharts();
 });
 
-/* ============================ render ============================ */
-function render(){
-  renderHeader();
+/* ===================== helpers ===================== */
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const LONG = ['January','February','March','April','May','June','July','August',
+              'September','October','November','December'];
+const MINUS = '−';
+
+const pct  = (x,d=2) => (x>=0?'+':MINUS) + Math.abs(x*100).toFixed(d) + '%';
+const pctP = (x,d=1) => (x>=0?'':MINUS) + Math.abs(x*100).toFixed(d) + '%';
+const pctBig = x => (x>=0?'+':MINUS) + Math.round(Math.abs(x*100)).toLocaleString('en-US') + '%';
+const usd  = (x,d=0) => '$' + Number(x).toLocaleString('en-US',
+                        {minimumFractionDigits:d, maximumFractionDigits:d});
+const ymLong = ym => { const p = ym.split('-'); return LONG[+p[1]-1] + ' ' + p[0]; };
+const dLong  = iso => { const p = iso.split('-'); return MON[+p[1]-1]+' '+(+p[2])+', '+p[0]; };
+
+let DATA = null;
+const charts = {};
+
+/* ===================== boot ===================== */
+async function init(){
+  try{
+    DATA = await fetch('./portfolio_snapshot.json', {cache:'no-store'}).then(r => {
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }catch(err){
+    document.getElementById('app').innerHTML =
+      '<div class="loading">Could not load portfolio data (' + err.message + ').</div>';
+    return;
+  }
+  renderHeader(DATA);
   document.getElementById('app').innerHTML =
-    heroHTML() + equityHTML() + crashHTML() + holdingsHTML() + sectorHTML() + heatmapHTML() + aboutHTML();
+    statsHTML(DATA) + equityHTML(DATA) + crashHTML(DATA) +
+    holdingsHTML(DATA) + sectorHTML(DATA) + heatmapHTML(DATA) + aboutHTML(DATA);
   wireAccordion();
-  animateHero();
-  buildEquityChart();
-  buildSectorChart();
+  paintGradient();
+  renderEquityCurve(DATA);
+  renderSectorChart(DATA);
+  updateBtn();
 }
+document.addEventListener('DOMContentLoaded', init);
 
 function rebuildCharts(){
-  Object.keys(charts).forEach(function(k){
-    if(charts[k]){ charts[k].destroy(); charts[k] = null; }
-  });
-  buildEquityChart();
-  buildSectorChart();
-  paintHeatmap();
+  Object.keys(charts).forEach(k => { if(charts[k]){ charts[k].destroy(); charts[k] = null; } });
+  if(!DATA) return;
+  renderEquityCurve(DATA);
+  renderSectorChart(DATA);
+  paintGradient();
 }
 
-/* ---------- header badge ---------- */
-function renderHeader(){
-  var live = DATA.live || {};
-  var ret = live.since_inception_return;
-  var up = !(ret < 0);
-  document.getElementById('navDot').className = 'pulse' + (up ? '' : ' neg');
-  document.getElementById('navText').textContent =
-    (live.nav != null ? money(live.nav, 2) : '—') + ' · ' + (ret != null ? pct(ret, 2) : '—');
+/* ===================== header ===================== */
+function renderHeader(d){
+  const l = d.live || {};
+  const up = !(l.since_inception_return < 0);
+  document.getElementById('dot').className = 'pulse-dot' + (up ? '' : ' neg');
+  document.getElementById('navtxt').textContent =
+    (l.nav != null ? usd(l.nav,2) : '—') + ' · ' +
+    (l.since_inception_return != null ? pct(l.since_inception_return,2) : '—');
 }
 
-/* ---------- hero ---------- */
-function heroHTML(){
-  var h = DATA.headline, live = DATA.live || {};
-  var ret = live.since_inception_return;
-  var up = !(ret < 0);
+/* ===================== hero stats ===================== */
+function statsHTML(d){
+  const h = d.headline, l = d.live || {};
+  const up = !(l.since_inception_return < 0);
+  const card = (cls,lbl,num,colour,sub) =>
+    `<div class="stat ${cls}">
+       <div class="stat-lbl">${lbl}</div>
+       <div class="stat-num" style="color:var(${colour})">${num}</div>
+       <div class="stat-sub">${sub}</div>
+     </div>`;
 
-  return '<div class="hero">' +
-    stat('a', 'BACKTESTED CAGR · ' + h.months_oos + ' MONTHS', h.cagr, 'accent',
-         'vs SPY ' + pct(h.benchmark_cagr, 2) + ' · ' + (h.excess_vs_spy_bps >= 0 ? '+' : MINUS) +
-         Math.abs(h.excess_vs_spy_bps) + ' bps/yr alpha', 'pct') +
-    stat('p', 'SHARPE RATIO · NET OF COSTS', h.sharpe, 'purple',
-         'vs SPY ' + h.benchmark_sharpe.toFixed(3) + ' · ' +
-         Math.round((h.sharpe / h.benchmark_sharpe - 1) * 100) + '% better risk-adjusted', 'num') +
-    stat('m', 'MAX DRAWDOWN · ' + String(h.max_drawdown_basis).toUpperCase(), h.max_drawdown, 'amber',
-         'vs SPY ' + pctPlain(h.benchmark_max_drawdown, 1) + ' · ' +
-         (h.benchmark_max_drawdown / h.max_drawdown).toFixed(1) + '× less tail risk', 'pctplain') +
-    stat('l' + (up ? '' : ' neg'), 'LIVE PAPER TRADING · SINCE ' +
-         (live.inception_date ? monthLabel(live.inception_date.slice(0,7)).toUpperCase() : '—'),
-         ret, up ? 'positive' : 'negative',
-         'NAV ' + money(live.nav, 2) + ' · ' + live.days_live + ' days live', 'live') +
+  return '<div class="stats">' +
+    card('blue', `Backtested CAGR · ${h.months_oos} months`, pct(h.cagr,2), '--blue',
+         `vs SPY ${pct(h.benchmark_cagr,2)} · ${h.excess_vs_spy_bps>=0?'+':MINUS}${Math.abs(h.excess_vs_spy_bps)} bps/yr alpha`) +
+    card('purple', 'Sharpe ratio · net of costs', h.sharpe.toFixed(3), '--purple',
+         `vs SPY ${h.benchmark_sharpe.toFixed(3)} · ${Math.round((h.sharpe/h.benchmark_sharpe-1)*100)}% better risk-adjusted`) +
+    card('amber', `Max drawdown · ${h.max_drawdown_basis}`, pctP(h.max_drawdown,2), '--amber',
+         `vs SPY ${pctP(h.benchmark_max_drawdown,1)} · ${(h.benchmark_max_drawdown/h.max_drawdown).toFixed(1)}× less tail risk`) +
+    card(up?'green':'red-left',
+         `Live P&L · since ${MON[+l.inception_date.slice(5,7)-1]} ${l.inception_date.slice(0,4)}`,
+         (up?'▲ ':'▼ ') + pct(l.since_inception_return,1), up?'--green':'--red',
+         `NAV ${usd(l.nav,2)} · ${l.days_live} days live`) +
   '</div>';
 }
 
-function stat(cls, label, value, colour, sub, kind){
-  return '<div class="stat ' + cls + '">' +
-    '<div class="stat-label">' + label + '</div>' +
-    '<div class="stat-num" style="color:var(--' + colour + ')" ' +
-      'data-value="' + value + '" data-kind="' + kind + '">&nbsp;</div>' +
-    '<div class="stat-sub">' + sub + '</div>' +
-  '</div>';
+/* ===================== equity curve ===================== */
+function equityHTML(d){
+  const h = d.headline, spy = d.equity_curve.spy;
+  const spyTot = spy[spy.length-1].v / spy[0].v - 1;
+  return `<div class="card">
+    <div class="card-hdr">
+      <div>
+        <div class="card-title">Performance Since ${ymLong(h.window_start.slice(0,7))}</div>
+        <div class="card-sub">Growth of ${usd(10000)}, net of costs · benchmarked against SPY</div>
+      </div>
+      <div class="card-stat">Total Return: <b>${pctBig(h.total_return)}</b> · vs SPY <b>${pctBig(spyTot)}</b></div>
+    </div>
+    <div class="chart-box"><canvas id="equity"></canvas><div id="tt"></div></div>
+    <p class="chart-hint">Scroll to zoom · Drag to pan · Double-click to reset</p>
+  </div>`;
 }
 
-function formatStat(kind, v){
-  if(kind === 'pct')      return pct(v, 2);
-  if(kind === 'pctplain') return pctPlain(v, 2);
-  if(kind === 'num')      return v.toFixed(3);
-  if(kind === 'live')     return (v >= 0 ? '▲ +' : '▼ ' + MINUS) + Math.abs(v * 100).toFixed(1) + '%';
-  return String(v);
-}
+const xy = arr => arr.map(p => ({x:p.d, y:p.v}));
 
-function animateHero(){
-  var nodes = document.querySelectorAll('.stat-num');
-  var DUR = 1200;
-  Array.prototype.forEach.call(nodes, function(node){
-    var target = parseFloat(node.getAttribute('data-value'));
-    var kind = node.getAttribute('data-kind');
-    if(!isFinite(target)){ node.textContent = '—'; return; }
-
-    var settled = false;
-    function settle(){
-      settled = true;
-      node.textContent = formatStat(kind, target);
-    }
-    // Browsers throttle rAF in background tabs, which would otherwise strand these
-    // numbers part-way through the count-up — a page loaded in a background tab would
-    // sit there showing a wrong performance figure. The timer guarantees the true value
-    // lands whether or not the animation ever gets to run.
-    setTimeout(settle, DUR + 250);
-
-    var start = null;
-    function step(ts){
-      if(settled) return;
-      if(start === null) start = ts;
-      var t = Math.min((ts - start) / DUR, 1);
-      var eased = 1 - Math.pow(1 - t, 3);
-      node.textContent = formatStat(kind, target * eased);
-      if(t < 1) requestAnimationFrame(step);
-      else settle();
-    }
-    requestAnimationFrame(step);
-  });
-}
-
-/* ---------- equity curve ---------- */
-function equityHTML(){
-  var h = DATA.headline;
-  var spy = DATA.equity_curve.spy;
-  var spyTotal = spy[spy.length - 1].v / spy[0].v - 1;
-  return '<div class="card">' +
-    '<div class="title-row">' +
-      '<div>' +
-        '<div class="card-title">Performance Since ' + longMonth(h.window_start.slice(0,7)) + '</div>' +
-        '<div class="card-sub">Growth of ' + money(10000) + ', net of costs · benchmarked against SPY</div>' +
-      '</div>' +
-      '<div class="title-stat">Total Return: <b>' + pctBig(h.total_return) + '</b> · vs SPY <b>' +
-        pctBig(spyTotal) + '</b></div>' +
-    '</div>' +
-    '<div class="chart-box"><canvas id="equityChart"></canvas><div id="tooltip"></div></div>' +
-    '<div class="chart-hint">💡 Scroll to zoom · Drag to pan · Double-click to reset</div>' +
-  '</div>';
-}
-
-function toXY(arr){
-  return arr.map(function(p){ return {x: p.d, y: p.v}; });
-}
-
-/* Shade each crash window straight from crash_table, so the chart and the table below
-   can never describe different periods. */
-var crashShade = {
-  id: 'crashShade',
-  beforeDatasetsDraw: function(chart){
-    var t = chart.scales.x, area = chart.chartArea;
-    if(!t || !area || !DATA.crash_table) return;
-    var ctx = chart.ctx;
+/* Shading is driven off crash_table rather than a hardcoded date list, so the bands and
+   the table below can never end up describing different windows. */
+const crashShade = {
+  id:'crashShade',
+  beforeDatasetsDraw(chart){
+    const {ctx, chartArea:a, scales} = chart;
+    if(!a || !DATA?.crash_table) return;
     ctx.save();
-    ctx.fillStyle = cssVar('--crash-fill');
-    DATA.crash_table.forEach(function(row){
-      var x0 = t.getPixelForValue(new Date(row.start).getTime());
-      var x1 = t.getPixelForValue(new Date(row.end).getTime());
-      var a = Math.max(Math.min(x0, x1), area.left);
-      var b = Math.min(Math.max(x0, x1), area.right);
-      if(b > a) ctx.fillRect(a, area.top, b - a, area.bottom - area.top);
+    ctx.fillStyle = cv('--crash-bg');
+    DATA.crash_table.forEach(r => {
+      const x0 = scales.x.getPixelForValue(new Date(r.start).getTime());
+      const x1 = scales.x.getPixelForValue(new Date(r.end).getTime());
+      const s = Math.max(Math.min(x0,x1), a.left), e = Math.min(Math.max(x0,x1), a.right);
+      if(e > s) ctx.fillRect(s, a.top, e - s, a.height);
     });
     ctx.restore();
   }
 };
 
-/* Glow only the live line, and only in dark mode — a canvas-wide CSS filter would
-   bleed onto the benchmark and the gridlines. */
-var liveGlow = {
-  id: 'liveGlow',
-  beforeDatasetDraw: function(chart, args){
-    if(currentTheme() !== 'dark') return;
-    if(chart.data.datasets[args.index].label !== 'Live Paper Trading') return;
+/* Dark mode gives the live line a glow, matching the mockup. Scoped to that one dataset —
+   a canvas-wide CSS filter would smear the benchmark and the gridlines too. */
+const liveGlow = {
+  id:'liveGlow',
+  beforeDatasetDraw(chart,args){
+    if(!isDark() || chart.data.datasets[args.index].label !== 'Live') return;
     chart.ctx.save();
-    chart.ctx.shadowColor = cssVar('--chart-strategy');
-    chart.ctx.shadowBlur = 8;
+    chart.ctx.shadowColor = cv('--chart-1');
+    chart.ctx.shadowBlur = 10;
   },
-  afterDatasetDraw: function(chart, args){
-    if(currentTheme() !== 'dark') return;
-    if(chart.data.datasets[args.index].label !== 'Live Paper Trading') return;
+  afterDatasetDraw(chart,args){
+    if(!isDark() || chart.data.datasets[args.index].label !== 'Live') return;
     chart.ctx.restore();
   }
 };
 
-/* The trough marker is located from the data, not pinned to a hardcoded date, so it
-   stays on the real bottom if the series is ever rebuilt. */
-function troughOf(startISO, endISO){
-  var s = new Date(startISO).getTime(), e = new Date(endISO).getTime();
-  var best = null;
-  DATA.equity_curve.backtest.forEach(function(p){
-    var t = new Date(p.d).getTime();
-    if(t < s || t > e) return;
-    if(best === null || p.v < best.v) best = p;
-  });
-  return best;
+function shortCrash(p){
+  if(/GFC|Financial/i.test(p))  return "GFC '08";
+  if(/EU|Debt/i.test(p))        return "EU '11";
+  if(/COVID/i.test(p))          return "COVID '20";
+  if(/Rate|Hike|Bear/i.test(p)) return "Hikes '22";
+  return p;
 }
 
-var crashLabels = {
-  id: 'crashLabels',
-  afterDatasetsDraw: function(chart){
-    var t = chart.scales.x, area = chart.chartArea;
-    if(!t || !area) return;
-    var ctx = chart.ctx;
+const annotations = {
+  id:'annotations',
+  afterDatasetsDraw(chart){
+    const {ctx, chartArea:a, scales} = chart;
+    if(!a) return;
+    // Below roughly a phone's width these collapse into an unreadable smear, so the
+    // crash callouts drop out; the shaded bands and the table still name the windows.
+    const roomy = (a.right - a.left) > 520;
+    const marks = [];
+    if(roomy && DATA.crash_table){
+      DATA.crash_table.forEach(r => marks.push({
+        d:r.start, t:'▼ ' + shortCrash(r.period),
+        c: /Rate|Hike|Bear/i.test(r.period) ? cv('--amber') : cv('--red'),
+        y: a.top + 15
+      }));
+    }
+    if(DATA.live?.inception_date){
+      marks.push({d:DATA.live.inception_date, t:'📍 Live', c:cv('--blue'), y:a.top + 15});
+    }
     ctx.save();
-    ctx.font = '600 10px Inter, sans-serif';
+    ctx.font = '600 11px Inter, sans-serif';
     ctx.textAlign = 'center';
-
-    // Below roughly a phone's width these labels overlap into an unreadable smear, so
-    // the crash callouts drop out and only the live marker is kept. The shaded bands
-    // still mark the same periods, and the table below names them.
-    var roomy = (area.right - area.left) > 520;
-
-    var marks = roomy ? DATA.crash_table.map(function(row){
-      return {d: row.start, text: '▼ ' + shortCrash(row.period), colour: cssVar('--negative'), y: area.top + 14};
-    }) : [];
-
-    var gfc = DATA.crash_table.filter(function(r){ return /GFC|Financial/i.test(r.period); })[0];
-    if(roomy && gfc){
-      var low = troughOf(gfc.start, gfc.end);
-      if(low) marks.push({d: low.d, text: '▲ Bottom', colour: cssVar('--positive'), y: area.bottom - 8});
-    }
-    if(DATA.live && DATA.live.inception_date){
-      marks.push({d: DATA.live.inception_date, text: '📍 Live', colour: cssVar('--accent'), y: area.top + 14});
-    }
-
-    marks.forEach(function(m){
-      var x = t.getPixelForValue(new Date(m.d).getTime());
-      if(x < area.left - 4 || x > area.right + 4) return;
-      x = Math.min(Math.max(x, area.left + 26), area.right - 26);
-      ctx.fillStyle = m.colour;
-      ctx.fillText(m.text, x, m.y);
+    marks.forEach(m => {
+      let x = scales.x.getPixelForValue(new Date(m.d).getTime());
+      if(x < a.left - 4 || x > a.right + 4) return;
+      x = Math.min(Math.max(x, a.left + 30), a.right - 30);
+      ctx.fillStyle = m.c;
+      ctx.fillText(m.t, x, m.y);
     });
     ctx.restore();
   }
 };
 
-function shortCrash(period){
-  if(/GFC|Financial/i.test(period)) return "GFC '07";
-  if(/EU|Debt/i.test(period))       return "EU '11";
-  if(/COVID/i.test(period))         return 'COVID';
-  if(/Rate|Hike|Bear/i.test(period))return 'Hikes';
-  return period;
-}
-
-function buildEquityChart(){
-  var el = document.getElementById('equityChart');
+function renderEquityCurve(d){
+  const el = document.getElementById('equity');
   if(!el) return;
-  var ec = DATA.equity_curve;
-  var dark = currentTheme() === 'dark';
-
+  const ec = d.equity_curve;
   charts.equity = new Chart(el.getContext('2d'), {
-    type: 'line',
-    data: {
-      datasets: [
-        {
-          label: 'SPY Benchmark',
-          data: toXY(ec.spy),
-          borderColor: cssVar('--chart-spy'),
-          backgroundColor: cssVar('--chart-spy-fill'),
-          borderWidth: 1, pointRadius: 0, fill: true, tension: 0, order: 4
-        },
-        {
-          label: 'Backtest',
-          data: toXY(ec.backtest),
-          borderColor: cssVar('--chart-backtest'),
-          borderDash: [5, 5], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, order: 3
-        },
-        {
-          label: 'Simulation',
-          data: toXY(ec.simulation),
-          borderColor: cssVar('--chart-sim'),
-          borderWidth: 2, pointRadius: 0, fill: false, tension: 0, order: 2
-        },
-        {
-          label: 'Live Paper Trading',
-          data: toXY(ec.live),
-          borderColor: cssVar('--chart-strategy'),
-          borderWidth: 2.5, pointRadius: 0, fill: false, tension: 0, order: 1
-        }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, normalized: true,
-      animation: false,
-      interaction: {mode: 'index', intersect: false, axis: 'x'},
-      plugins: {
-        legend: {
-          display: true, position: 'bottom',
-          labels: {
-            color: cssVar('--text-secondary'), boxWidth: 12, boxHeight: 2,
-            usePointStyle: false, padding: 16, font: {size: 11}
-          }
-        },
-        tooltip: {enabled: false, external: externalTooltip},
-        crashShade: {}, crashLabels: {}, liveGlow: {},
-        zoom: {
-          zoom: {wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x'},
-          pan: {enabled: true, mode: 'x'}
-        }
+    type:'line',
+    data:{datasets:[
+      {label:'SPY', data:xy(ec.spy), borderColor:cv('--chart-spy'),
+       backgroundColor:cv('--chart-spy-bg'), borderWidth:1, pointRadius:0,
+       fill:true, tension:0, order:4},
+      {label:'Backtest', data:xy(ec.backtest), borderColor:cv('--chart-backtest'),
+       borderDash:[5,5], borderWidth:1.5, pointRadius:0, fill:false, tension:0, order:3},
+      {label:'Simulation', data:xy(ec.simulation), borderColor:cv('--chart-sim'),
+       borderWidth:2, pointRadius:0, fill:false, tension:0, order:2},
+      {label:'Live', data:xy(ec.live), borderColor:cv('--chart-1'),
+       borderWidth:3, pointRadius:0, fill:false, tension:0, order:1}
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false, normalized:true, animation:false,
+      interaction:{mode:'index', intersect:false, axis:'x'},
+      plugins:{
+        legend:{position:'bottom',
+          labels:{color:cv('--text-2'), boxWidth:14, boxHeight:2, padding:16, font:{size:11}}},
+        tooltip:{enabled:false, external:extTooltip},
+        crashShade:{}, liveGlow:{}, annotations:{},
+        zoom:{zoom:{wheel:{enabled:true}, pinch:{enabled:true}, mode:'x'},
+              pan:{enabled:true, mode:'x'}}
       },
-      scales: {
-        x: {
-          type: 'time', time: {unit: 'year'}, bounds: 'data',
-          grid: {color: cssVar('--border')},
-          border: {color: cssVar('--border')},
-          ticks: {color: cssVar('--text-muted'), maxRotation: 0, autoSkip: true, font: {size: 11}}
-        },
-        y: {
-          grid: {color: cssVar('--border')},
-          border: {color: cssVar('--border')},
-          ticks: {
-            color: cssVar('--text-muted'), font: {size: 11},
-            callback: function(v){ return '$' + (v / 1000).toFixed(0) + 'k'; }
-          }
-        }
-      },
-      onClick: function(){}
+      scales:{
+        x:{type:'time', time:{unit:'year'}, bounds:'data',
+           grid:{color:cv('--border')}, border:{color:cv('--border')},
+           ticks:{color:cv('--text-3'), maxRotation:0, autoSkip:true, font:{size:11}}},
+        y:{grid:{color:cv('--border')}, border:{color:cv('--border')},
+           ticks:{color:cv('--text-3'), font:{size:11},
+                  callback:v => '$' + (v/1000).toFixed(0) + 'k'}}
+      }
     },
-    plugins: [crashShade, liveGlow, crashLabels]
+    plugins:[crashShade, liveGlow, annotations]
   });
-
-  el.ondblclick = function(){ if(charts.equity) charts.equity.resetZoom(); };
+  el.ondblclick = () => charts.equity && charts.equity.resetZoom();
 }
 
-function externalTooltip(context){
-  var tip = document.getElementById('tooltip');
-  if(!tip) return;
-  var model = context.tooltip;
-  if(model.opacity === 0){ tip.style.opacity = 0; return; }
-
-  var strat = null, spyV = null, label = null, seriesName = 'Strategy';
-  model.dataPoints.forEach(function(dp){
-    label = dp.raw.x;
-    if(dp.dataset.label === 'SPY Benchmark') spyV = dp.raw.y;
-    else if(strat === null){ strat = dp.raw.y; seriesName = dp.dataset.label; }
+function extTooltip(ctx){
+  const tt = document.getElementById('tt');
+  if(!tt) return;
+  const m = ctx.tooltip;
+  if(m.opacity === 0){ tt.style.opacity = 0; return; }
+  let strat = null, spy = null, label = null;
+  m.dataPoints.forEach(p => {
+    label = p.raw.x;
+    if(p.dataset.label === 'SPY') spy = p.raw.y;
+    else if(strat === null) strat = p.raw.y;
   });
-  if(label === null){ tip.style.opacity = 0; return; }
-
-  var html = '<div class="tt-date">' + prettyDate(String(label)) + '</div>';
-  if(strat != null){
-    html += '<div class="tt-row"><span>Strategy</span><span style="color:var(--chart-strategy);font-weight:600">' +
-      money(strat, 0) + '</span></div>';
+  if(label === null){ tt.style.opacity = 0; return; }
+  let html = `<div class="tt-d">${dLong(String(label))}</div>`;
+  if(strat != null) html += `<div class="tt-r"><span>Strategy</span><span style="color:var(--chart-1);font-weight:600">${usd(strat)}</span></div>`;
+  if(spy   != null) html += `<div class="tt-r"><span>SPY</span><span style="color:var(--text-3);font-weight:600">${usd(spy)}</span></div>`;
+  if(strat != null && spy != null){
+    const diff = (strat/10000-1) - (spy/10000-1);
+    html += `<div class="tt-r"><span>vs SPY</span><span style="color:var(${diff>=0?'--green':'--red'});font-weight:600">${diff>=0?'+':MINUS}${Math.abs(diff*100).toFixed(1)}pp</span></div>`;
   }
-  if(spyV != null){
-    html += '<div class="tt-row"><span>SPY</span><span style="color:var(--text-muted);font-weight:600">' +
-      money(spyV, 0) + '</span></div>';
-  }
-  if(strat != null && spyV != null){
-    var diff = (strat / 10000 - 1) - (spyV / 10000 - 1);
-    var col = diff >= 0 ? 'var(--positive)' : 'var(--negative)';
-    html += '<div class="tt-row" style="margin-top:4px"><span>vs SPY</span><span style="color:' + col +
-      ';font-weight:600">' + (diff >= 0 ? '+' : MINUS) + Math.abs(diff * 100).toFixed(1) + 'pp</span></div>';
-  }
-  tip.innerHTML = html;
-
-  var box = context.chart.canvas.parentNode.getBoundingClientRect();
-  var x = model.caretX, w = tip.offsetWidth || 180;
-  if(x + w + 16 > box.width) x = x - w - 16; else x = x + 16;
-  tip.style.opacity = 1;
-  tip.style.left = Math.max(0, x) + 'px';
-  tip.style.top = Math.max(0, model.caretY - 40) + 'px';
+  tt.innerHTML = html;
+  const box = ctx.chart.canvas.parentNode.getBoundingClientRect();
+  const w = tt.offsetWidth || 180;
+  let x = m.caretX;
+  x = (x + w + 18 > box.width) ? x - w - 18 : x + 18;
+  tt.style.opacity = 1;
+  tt.style.left = Math.max(0, x) + 'px';
+  tt.style.top  = Math.max(0, m.caretY - 45) + 'px';
 }
 
-/* ---------- crash table ---------- */
-function crashHTML(){
-  // Both bars scale against the deeper of the two, so a period where the strategy fell
-  // further renders as a visibly longer bar instead of being clamped to look equal.
-  var rows = DATA.crash_table.map(function(r){
-    var worst = Math.max(Math.abs(r.strategy), Math.abs(r.spy));
-    var sW = Math.abs(r.strategy) / worst * 100;
-    var pW = Math.abs(r.spy) / worst * 100;
-    var win = r.edge_pp > 0;
-    var html =
-      '<tr class="data-row">' +
-        '<td class="period">' + r.period + '<div style="font-size:.7rem;color:var(--text-muted);font-weight:400">' +
-          prettyDate(r.start) + ' – ' + prettyDate(r.end) + '</div></td>' +
-        '<td><span class="pill neg">' + pctPlain(r.strategy, 1) + '</span></td>' +
-        '<td><span class="pill spy">' + pctPlain(r.spy, 1) + '</span></td>' +
-        '<td><span class="pill ' + (win ? 'win' : 'lose') + '">' +
-          (win ? '✅ +' : '⚠ ' + MINUS) + Math.abs(r.edge_pp).toFixed(1) + 'pp</span></td>' +
-        '<td class="bars">' +
-          '<div class="bar bar-strategy" style="width:' + sW.toFixed(1) + '%"></div>' +
-          '<div class="bar bar-spy" style="width:' + pW.toFixed(1) + '%"></div>' +
-          '<div class="bar-legend">strategy vs SPY drawdown · shorter is better</div>' +
-        '</td>' +
-      '</tr>';
-    // Losing rows are annotated in place rather than filtered out.
+/* ===================== crash table ===================== */
+function crashHTML(d){
+  // Both bars scale against the deeper of the two, so a window where the strategy fell
+  // further reads as a visibly longer bar rather than being clamped to look equal.
+  const rows = d.crash_table.map(r => {
+    const worst = Math.max(Math.abs(r.strategy), Math.abs(r.spy));
+    const sw = Math.abs(r.strategy)/worst*100, bw = Math.abs(r.spy)/worst*100;
+    const win = r.edge_pp > 0;
+    let html = `<tr class="r">
+      <td class="per">${r.period}<small>${dLong(r.start)} – ${dLong(r.end)}</small></td>
+      <td><span class="pill red">${pctP(r.strategy,1)}</span></td>
+      <td><span class="pill grey">${pctP(r.spy,1)}</span></td>
+      <td><span class="pill ${win?'green':'amber'}">${win?'✅ +':'⚠ '+MINUS}${Math.abs(r.edge_pp).toFixed(1)}pp</span></td>
+      <td class="bars">
+        <div class="bar s" style="width:${sw.toFixed(1)}%"></div>
+        <div class="bar b" style="width:${bw.toFixed(1)}%"></div>
+        <div class="bar-cap">strategy vs SPY drawdown · shorter is better</div>
+      </td></tr>`;
+    // Driven by the sign of edge_pp, not pinned to a year, so it stays true if data moves.
     if(!win){
-      html += '<tr class="note-row"><td colspan="5">Strategy lagged SPY slightly in this period — ' +
-        'reported for transparency.</td></tr>';
+      html += `<tr class="note"><td colspan="5">⚠ Published for transparency — strategy lagged in this window</td></tr>`;
     }
     return html;
   }).join('');
 
-  return '<div class="card">' +
-    '<div class="title-row"><div>' +
-      '<div class="card-title">Capital Preservation During Market Crises</div>' +
-      '<div class="card-sub">Peak-to-trough drawdown inside each window · all periods shown, wins and losses</div>' +
-    '</div></div>' +
-    '<div class="scroll-x"><table>' +
-      '<thead><tr><th>Period</th><th>Strategy</th><th>SPY</th><th>Edge</th><th>Relative Defence</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody>' +
-    '</table></div>' +
-  '</div>';
+  return `<div class="card">
+    <div class="card-hdr"><div>
+      <div class="card-title">Capital Preservation During Market Crises</div>
+      <div class="card-sub">Peak-to-trough drawdown inside each window · all periods shown, wins and losses</div>
+    </div></div>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Period</th><th>Strategy</th><th>SPY</th><th>Edge</th><th>Relative depth</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
 }
 
-/* ---------- holdings ---------- */
-var HOLD_COLOUR = {
-  'Finance': 'var(--hold-finance)',
-  'Manufacturing': 'var(--hold-manufacturing)',
-  'Healthcare': 'var(--hold-healthcare)',
-  'Consumer Durables': 'var(--hold-durables)',
-  'Other': 'var(--hold-other)'
+/* ===================== holdings ===================== */
+const CHIP = {
+  'Finance':          'background:var(--blue-soft);color:var(--blue)',
+  'Manufacturing':    'background:var(--purple-soft);color:var(--purple)',
+  'Healthcare':       'background:var(--green-soft);color:var(--green)',
+  'Consumer Durables':'background:var(--amber-soft);color:var(--amber)',
+  'Other':            'background:var(--grey-soft);color:var(--text-2)'
 };
-function holdColour(sector){ return HOLD_COLOUR[sector] || 'var(--hold-other)'; }
+const EDGE = {
+  'Finance':'var(--blue)', 'Manufacturing':'var(--purple)', 'Healthcare':'var(--green)',
+  'Consumer Durables':'var(--amber)', 'Other':'var(--text-3)'
+};
 
-function holdingsHTML(){
-  var h = DATA.holdings || {};
-  var pos = h.positions || [];
+function holdingsHTML(d){
+  const h = d.holdings || {}, pos = h.positions || [];
   if(!pos.length){
-    return '<div class="card"><div class="card-title">Current Portfolio Holdings</div>' +
-      '<div class="card-sub" style="margin-top:10px">Positions are not currently published.</div></div>';
+    return `<div class="card"><div class="card-title">Current Portfolio Holdings</div>
+      <div class="card-sub" style="margin-top:8px">Positions are not currently published.</div></div>`;
   }
-  var total = pos.reduce(function(s, p){ return s + p.value; }, 0);
-  var maxW = Math.max.apply(null, pos.map(function(p){ return p.weight; }));
+  const total = pos.reduce((s,p) => s + p.value, 0);
+  const maxW  = Math.max(...pos.map(p => p.weight));
 
-  var cards = pos.map(function(p, i){
-    var col = holdColour(p.sector);
-    return '<div class="hold" style="border-left-color:' + col + ';animation-delay:' + (i * 60) + 'ms">' +
-      '<div class="hold-top">' +
-        '<span class="hold-tkr">' + p.ticker + '</span>' +
-        '<span class="hold-name">' + p.name + '</span>' +
-        '<span class="chip">' + p.sector + '</span>' +
-      '</div>' +
-      '<div class="hold-mid">' +
-        '<span class="hold-val">' + money(p.value, 2) + '</span>' +
-        '<span class="hold-shares">' + p.shares + ' sh · ' + money(p.price, 2) + '/sh</span>' +
-      '</div>' +
-      '<div class="hold-bot">' +
-        '<span class="wbar"><div style="width:' + (p.weight / maxW * 100).toFixed(1) + '%;background:' + col + '"></div></span>' +
-        '<span class="wpct">' + (p.weight * 100).toFixed(1) + '%</span>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  const cards = pos.map((p,i) => `
+    <div class="hold" style="border-left-color:${EDGE[p.sector]||'var(--text-3)'};animation-delay:${i*60}ms">
+      <div class="h-r1">
+        <span class="h-tkr">${p.ticker}</span>
+        <span class="h-co">${p.name}</span>
+        <span class="chip" style="${CHIP[p.sector]||CHIP['Other']}">${p.sector}</span>
+      </div>
+      <div class="h-r2">${usd(p.value,2)} · ${p.shares} sh · ${usd(p.price,2)}/sh</div>
+      <div class="wbar"><i style="width:${(p.weight/maxW*100).toFixed(1)}%;background:${EDGE[p.sector]||'var(--blue)'}"></i></div>
+      <div class="wlbl">${(p.weight*100).toFixed(1)}%</div>
+    </div>`).join('');
 
-  return '<div class="card">' +
-    '<div class="title-row"><div>' +
-      '<div class="card-title">Current Portfolio Holdings</div>' +
-      '<div class="card-sub">Small Account · ' + pos.length + ' Positions · Valued ' + prettyDate(h.as_of) +
-        (h.last_rebalance ? ' · from the ' + prettyDate(h.last_rebalance) + ' rebalance' : '') + '</div>' +
-    '</div></div>' +
-    '<div class="holdings">' + cards + '</div>' +
-    '<div class="summary">Total Deployed: ' + money(total, 2) + ' · ' + pos.length + ' positions</div>' +
-    '<div class="disclaimer">Live small-account book, marked at ' + prettyDate(h.as_of) +
-      ' closing prices. Weights are shown relative to the largest position. ' +
-      'Holdings are published as of the valuation date above.</div>' +
-  '</div>';
+  return `<div class="card">
+    <div class="card-hdr"><div>
+      <div class="card-title">Current Portfolio Holdings</div>
+      <div class="card-sub">Small Account · ${pos.length} positions · valued ${dLong(h.as_of)}${h.last_rebalance ? ' · from the '+dLong(h.last_rebalance)+' rebalance' : ''}</div>
+    </div></div>
+    <div class="holdings-grid">${cards}</div>
+    <div class="h-total">Total deployed: ${usd(total,2)} · ${pos.length} positions</div>
+    <div class="h-note">Live small-account book marked at ${dLong(h.as_of)} closing prices. Bars are scaled to the largest position.</div>
+  </div>`;
 }
 
-/* ---------- sector rotation ---------- */
-function sectorHTML(){
-  var sh = DATA.sector_history;
-  var folded = (sh.folded_into_other || []).join(', ');
-  return '<div class="card">' +
-    '<div class="title-row"><div>' +
-      '<div class="card-title">20-Year Sector Composition</div>' +
-      '<div class="card-sub">How the strategy adapts across market regimes · the shaded ' +
-        '“cash” band is equity exposure the risk layer pulled out of the market' +
-        (folded ? ' · smallest sleeves folded into “Other”: ' + folded : '') + '</div>' +
-    '</div></div>' +
-    '<div class="chart-box short"><canvas id="sectorChart"></canvas></div>' +
-  '</div>';
-}
-
-function buildSectorChart(){
-  var el = document.getElementById('sectorChart');
-  if(!el) return;
-  var sh = DATA.sector_history;
-  // A category axis keeps the 248 monthly bars flush against each other. On a time axis
-  // Chart.js sizes each bar from the date delta, which left ragged gaps between months.
-  var labels = sh.months.slice();
-
-  var datasets = sh.sectors.map(function(name, i){
-    return {
-      label: name,
-      data: sh.weights[name].map(function(w){ return w * 100; }),
-      backgroundColor: cssVar('--sector-' + ((i % 8) + 1)),
-      borderWidth: 0, categoryPercentage: 1.0, barPercentage: 1.0
-    };
+/* ===================== sector rotation ===================== */
+/* Named slots first so Finance/Healthcare/etc. keep their specified hues; anything the
+   dataset carries beyond that list falls through to the next unused slot. */
+const SECTOR_SLOT = {
+  'Finance':1, 'Manufacturing':2, 'Healthcare':3, 'Services':4,
+  'Energy':5, 'Retail':6, 'Utilities':7, 'Other':8
+};
+function sectorColours(names){
+  const used = new Set(), out = {};
+  names.forEach(n => { if(SECTOR_SLOT[n]){ out[n] = SECTOR_SLOT[n]; used.add(SECTOR_SLOT[n]); } });
+  let next = 1;
+  names.forEach(n => {
+    if(out[n]) return;
+    while(used.has(next) && next <= 8) next++;
+    out[n] = next <= 8 ? next : ((Object.keys(out).length % 8) + 1);
+    used.add(out[n]);
   });
+  return out;
+}
 
-  // Whatever the sector sleeves do not account for is cash. Plotting it explicitly
-  // matters: the book drops to 11% invested in Apr 2020 and ~14% in late 2008, and
-  // that de-risking is what produces the shallow drawdown quoted above. Left implicit
-  // it just looks like a hole in the data.
+function sectorHTML(d){
+  const folded = (d.sector_history.folded_into_other || []).join(', ');
+  return `<div class="card">
+    <div class="card-hdr"><div>
+      <div class="card-title">20-Year Sector Composition</div>
+      <div class="card-sub">How the strategy adapts across market regimes · the shaded cash band is exposure the risk layer pulled out of the market${folded ? ' · smallest sleeves folded into “Other”: '+folded : ''}</div>
+    </div></div>
+    <div class="chart-box short"><canvas id="sector"></canvas></div>
+  </div>`;
+}
+
+function renderSectorChart(d){
+  const el = document.getElementById('sector');
+  if(!el) return;
+  const sh = d.sector_history;
+  const labels = sh.months.slice();
+  const slot = sectorColours(sh.sectors);
+
+  const datasets = sh.sectors.map(name => ({
+    label:name,
+    data:sh.weights[name].map(w => w*100),
+    backgroundColor:cv('--sec-' + slot[name]),
+    borderWidth:0, categoryPercentage:1, barPercentage:1
+  }));
+
+  // Whatever the sleeves don't account for is cash. Plotted explicitly because the book
+  // drops to 11% invested in Apr 2020 and ~14% in late 2008 — that de-risking is what
+  // produces the shallow drawdown quoted above, and as blank space it just looked
+  // like a hole in the data.
   datasets.push({
-    label: 'Cash / not invested',
-    data: labels.map(function(_m, i){
-      var invested = sh.sectors.reduce(function(s, name){ return s + sh.weights[name][i]; }, 0);
-      return Math.max(0, (1 - invested) * 100);
-    }),
-    backgroundColor: cssVar('--sector-cash'),
-    borderWidth: 0, categoryPercentage: 1.0, barPercentage: 1.0
+    label:'Cash / not invested',
+    data:labels.map((_,i) => Math.max(0, (1 - sh.sectors.reduce((s,n) => s + sh.weights[n][i], 0)) * 100)),
+    backgroundColor:cv('--sec-cash'), borderWidth:0, categoryPercentage:1, barPercentage:1
   });
 
   charts.sector = new Chart(el.getContext('2d'), {
-    type: 'bar',
-    data: {labels: labels, datasets: datasets},
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: {mode: 'index', intersect: false},
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: {color: cssVar('--text-secondary'), boxWidth: 10, boxHeight: 10, padding: 12, font: {size: 11}}
-        },
-        tooltip: {
-          backgroundColor: cssVar('--surface'),
-          titleColor: cssVar('--text-primary'),
-          bodyColor: cssVar('--text-secondary'),
-          borderColor: cssVar('--border'), borderWidth: 1, padding: 10,
-          callbacks: {
-            title: function(items){ return longMonth(String(items[0].label)); },
-            label: function(ctx){ return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%'; }
+    type:'bar',
+    data:{labels, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{position:'bottom',
+          labels:{color:cv('--text-2'), boxWidth:10, boxHeight:10, padding:12, font:{size:11}}},
+        tooltip:{
+          backgroundColor:cv('--surface'), titleColor:cv('--text-1'),
+          bodyColor:cv('--text-2'), borderColor:cv('--border'), borderWidth:1, padding:11,
+          callbacks:{
+            title:it => ymLong(String(it[0].label)),
+            label:c => c.dataset.label + ': ' + c.parsed.y.toFixed(1) + '%'
           }
         }
       },
-      scales: {
-        x: {
-          type: 'category', stacked: true,
-          grid: {display: false}, border: {color: cssVar('--border')},
-          ticks: {
-            color: cssVar('--text-muted'), maxRotation: 0, autoSkip: false, font: {size: 11},
-            // Label only Januaries, so the axis reads as a clean year ruler.
-            callback: function(_v, i){
-              var m = labels[i];
-              return m && m.slice(5) === '01' ? m.slice(0, 4) : '';
-            }
-          }
-        },
-        y: {
-          stacked: true, max: 100, grid: {color: cssVar('--border')},
-          border: {color: cssVar('--border')},
-          ticks: {color: cssVar('--text-muted'), font: {size: 11},
-                  callback: function(v){ return v + '%'; }}
-        }
+      scales:{
+        // Category rather than time: on a time axis Chart.js sizes each bar from the date
+        // delta, which left ragged gaps between the 248 monthly bars.
+        x:{type:'category', stacked:true, grid:{display:false},
+           border:{color:cv('--border')},
+           ticks:{color:cv('--text-3'), maxRotation:0, autoSkip:false, font:{size:11},
+                  callback:(_v,i) => (labels[i] && labels[i].slice(5) === '01') ? labels[i].slice(0,4) : ''}},
+        y:{stacked:true, max:100, grid:{color:cv('--border')}, border:{color:cv('--border')},
+           ticks:{color:cv('--text-3'), font:{size:11}, callback:v => v + '%'}}
       }
     }
   });
 }
 
-/* ---------- heatmap ---------- */
-function heatColour(r){
-  var v = r * 100;
+/* ===================== monthly heatmap ===================== */
+function hmColour(v){
   if(v > 0){
-    if(v >= 8) return 'var(--heatmap-pos5)';
-    if(v >= 6) return 'var(--heatmap-pos4)';
-    if(v >= 4) return 'var(--heatmap-pos3)';
-    if(v >= 2) return 'var(--heatmap-pos2)';
-    return 'var(--heatmap-pos1)';
+    if(v >= .10) return 'var(--hm-5p)';
+    if(v >= .05) return 'var(--hm-4p)';
+    if(v >= .02) return 'var(--hm-3p)';
+    if(v >= .005) return 'var(--hm-2p)';
+    return 'var(--hm-1p)';
   }
   if(v < 0){
-    if(v <= -8) return 'var(--heatmap-neg5)';
-    if(v <= -6) return 'var(--heatmap-neg4)';
-    if(v <= -4) return 'var(--heatmap-neg3)';
-    if(v <= -2) return 'var(--heatmap-neg2)';
-    return 'var(--heatmap-neg1)';
+    if(v <= -.10) return 'var(--hm-5n)';
+    if(v <= -.05) return 'var(--hm-4n)';
+    if(v <= -.02) return 'var(--hm-3n)';
+    if(v <= -.005) return 'var(--hm-2n)';
+    return 'var(--hm-1n)';
   }
-  return 'var(--bg-secondary)';
+  return 'var(--bg-2)';
 }
 
-function heatmapHTML(){
-  var mr = DATA.monthly_returns;
-  var byMonth = {};
-  mr.forEach(function(r){ byMonth[r.month] = r; });
-  var years = mr.map(function(r){ return parseInt(r.month.slice(0, 4), 10); });
-  var y0 = Math.min.apply(null, years), y1 = Math.max.apply(null, years);
+function heatmapHTML(d){
+  const mr = d.monthly_returns, by = {};
+  mr.forEach(r => by[r.month] = r);
+  const yrs = mr.map(r => +r.month.slice(0,4));
+  const y0 = Math.min(...yrs), y1 = Math.max(...yrs);
 
-  var cells = '<div class="hm" style="grid-template-columns:44px repeat(12,1fr) 68px">';
-  cells += '<div></div>';
-  MONTHS.forEach(function(m){ cells += '<div class="hm-h">' + m + '</div>'; });
-  cells += '<div class="hm-h">Year</div>';
+  let g = '<div class="hm"><div></div>';
+  MON.forEach(m => g += `<div class="hm-h">${m}</div>`);
+  g += '<div class="hm-h">YTD</div>';
 
-  for(var y = y0; y <= y1; y++){
-    cells += '<div class="hm-y">' + y + '</div>';
-    var compound = 1, seen = 0;
-    for(var m = 1; m <= 12; m++){
-      var key = y + '-' + (m < 10 ? '0' + m : m);
-      var row = byMonth[key];
-      if(!row){ cells += '<div class="hm-empty"></div>'; continue; }
-      compound *= (1 + row.strategy); seen++;
-      var title = MONTHS[m - 1] + ' ' + y +
-        ' — Strategy: ' + pct(row.strategy, 1) + ' | SPY: ' + pct(row.spy, 1);
-      cells += '<div class="hm-cell" title="' + title + '">' +
-        '<i style="background:' + heatColour(row.strategy) + '"></i>' +
-        '<i style="background:' + heatColour(row.spy) + '"></i>' +
-      '</div>';
+  for(let y = y0; y <= y1; y++){
+    g += `<div class="hm-yr">${y}</div>`;
+    let comp = 1, seen = 0;
+    for(let m = 1; m <= 12; m++){
+      const r = by[y + '-' + String(m).padStart(2,'0')];
+      if(!r){ g += '<div class="hm-x"></div>'; continue; }
+      comp *= (1 + r.strategy); seen++;
+      const t = `${MON[m-1]} ${y} — Strategy: ${pct(r.strategy,1)} | SPY: ${pct(r.spy,1)}`;
+      g += `<div class="hm-c" title="${t}">
+              <i style="background:${hmColour(r.strategy)}"></i>
+              <i style="background:${hmColour(r.spy)}"></i>
+            </div>`;
     }
     if(seen){
-      var annual = compound - 1;
-      var cls = annual >= 0 ? 'win' : 'neg';
-      var style = annual >= 0
-        ? 'background:var(--positive-soft);color:var(--positive)'
-        : 'background:var(--negative-soft);color:var(--negative)';
-      cells += '<div class="hm-pill" style="' + style + '" title="' + y +
-        (seen < 12 ? ' (partial year, ' + seen + ' months)' : '') + '">' + pct(annual, 1) + '</div>';
-    } else {
-      cells += '<div></div>';
-    }
+      const a = comp - 1;
+      g += `<div class="hm-p" style="background:var(${a>=0?'--green-soft':'--red-soft'});color:var(${a>=0?'--green':'--red'})" title="${y}${seen<12?` (partial year, ${seen} months)`:''}">${pct(a,1)}</div>`;
+    } else g += '<div></div>';
   }
-  cells += '</div>';
+  g += '</div>';
 
-  return '<div class="card">' +
-    '<div class="title-row"><div>' +
-      '<div class="card-title">Monthly Performance — Portfolio vs S&amp;P 500</div>' +
-      '<div class="card-sub">Upper bar = strategy, lower bar = SPY · hover any cell for exact figures</div>' +
-    '</div></div>' +
-    '<div class="scroll-x">' + cells + '</div>' +
-    '<div class="hm-legend">' +
-      '<span style="display:flex;align-items:center;gap:8px">' + MINUS + '10%+' +
-        '<span class="grad" id="hmGrad"></span>+10%+</span>' +
-      '<span style="display:flex;align-items:center;gap:8px">' +
-        '<span style="display:inline-flex;flex-direction:column;gap:1px;width:22px">' +
-          '<i style="display:block;height:8px;border-radius:2px;background:var(--heatmap-pos4)"></i>' +
-          '<i style="display:block;height:8px;border-radius:2px;background:var(--heatmap-pos1)"></i>' +
-        '</span>each cell stacks strategy over SPY</span>' +
-      '<span>Year column compounds the strategy’s months in that calendar year.</span>' +
-    '</div>' +
-  '</div>';
+  return `<div class="card">
+    <div class="card-hdr"><div>
+      <div class="card-title">Monthly Performance — Portfolio vs S&amp;P 500</div>
+      <div class="card-sub">Upper cell = strategy, lower cell = SPY · hover any cell for exact figures</div>
+    </div></div>
+    <div class="scroll-x">${g}</div>
+    <div class="hm-lg">
+      <span style="display:flex;align-items:center;gap:9px">${MINUS}10% <span class="grad" id="grad"></span> +10%</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span style="display:inline-flex;flex-direction:column;gap:1px;width:22px">
+          <i style="display:block;height:8px;border-radius:2px;background:var(--hm-4p)"></i>
+          <i style="display:block;height:8px;border-radius:2px;background:var(--hm-1p)"></i>
+        </span>each cell stacks strategy over SPY</span>
+      <span>YTD compounds the strategy's months in that calendar year.</span>
+    </div>
+  </div>`;
 }
 
-function paintHeatmap(){
-  var mr = DATA.monthly_returns;
-  var byMonth = {};
-  mr.forEach(function(r){ byMonth[r.month] = r; });
-  // Re-resolve var() colours after a theme flip (inline vars follow automatically,
-  // but the gradient bar is painted from computed values).
-  var g = document.getElementById('hmGrad');
-  if(g){
-    g.style.background = 'linear-gradient(90deg,' + cssVar('--heatmap-neg5') + ',' +
-      cssVar('--heatmap-neg2') + ',' + cssVar('--bg-secondary') + ',' +
-      cssVar('--heatmap-pos2') + ',' + cssVar('--heatmap-pos5') + ')';
-  }
+function paintGradient(){
+  const g = document.getElementById('grad');
+  if(g) g.style.background = `linear-gradient(90deg, ${cv('--hm-5n')}, ${cv('--hm-2n')}, ${cv('--bg-2')}, ${cv('--hm-2p')}, ${cv('--hm-5p')})`;
 }
 
-/* ---------- about ---------- */
-function aboutHTML(){
-  var n = DATA.notes || {};
-  return '<div class="card">' +
-    '<button class="acc-btn" id="aboutBtn" aria-expanded="false">' +
-      '<span>About This Strategy</span>' +
-      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" ' +
-        'stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
-    '</button>' +
-    '<div class="acc-body" id="aboutBody">' +
-      '<h4>Method</h4><p>' + (n.strategy || '') + '</p>' +
-      '<h4>Benchmark</h4><p>' + (n.benchmark || '') + '</p>' +
-      '<h4>Drawdown</h4><p>' + (n.drawdown || '') + '</p>' +
-      '<h4>Sector history</h4><p>' + (n.sector_history || '') + '</p>' +
-      '<h4>Live account</h4><p>' + (n.live || '') + '</p>' +
-      '<h4>Reading the chart</h4>' +
-      '<ul>' +
-        '<li><b>Backtest</b> — certified walk-forward research window, drawn dashed.</li>' +
-        '<li><b>Simulation</b> — the ' + DATA.headline.window_end.slice(0, 4) +
-          ' out-of-sample continuation, drawn amber.</li>' +
-        '<li><b>Live paper trading</b> — the funded account, rebased onto the simulated ' +
-          'curve so both fit one axis. True dollar NAV is reported in the header and hero card.</li>' +
-      '</ul>' +
-      '<h4>Data as of</h4><p>Snapshot generated ' + (DATA.generated_at || DATA.as_of) + '.</p>' +
-    '</div>' +
-  '</div>';
+/* ===================== about ===================== */
+function aboutHTML(d){
+  const n = d.notes || {};
+  return `<div class="card">
+    <button class="acc-btn" id="acc" aria-expanded="false" style="border-top:none">
+      <span>About This Strategy</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="acc-c" id="accc"><div class="acc-in">
+      <h4>Method</h4><p>${n.strategy||''}</p>
+      <h4>Benchmark</h4><p>${n.benchmark||''}</p>
+      <h4>Drawdown</h4><p>${n.drawdown||''}</p>
+      <h4>Sector history</h4><p>${n.sector_history||''}</p>
+      <h4>Live account</h4><p>${n.live||''}</p>
+      <h4>Reading the chart</h4>
+      <ul>
+        <li><b>Backtest</b> — certified walk-forward research window, drawn dashed.</li>
+        <li><b>Simulation</b> — the ${d.headline.window_end.slice(0,4)} out-of-sample continuation, drawn amber.</li>
+        <li><b>Live</b> — the funded paper account, rebased onto the simulated curve so both fit one axis. True dollar NAV is reported in the header and the Live P&amp;L card.</li>
+      </ul>
+      <h4>Data as of</h4><p>Snapshot generated ${d.generated_at || d.as_of}.</p>
+    </div></div>
+  </div>`;
 }
 
 function wireAccordion(){
-  var btn = document.getElementById('aboutBtn');
-  var body = document.getElementById('aboutBody');
-  if(!btn) return;
-  btn.addEventListener('click', function(){
-    var open = btn.getAttribute('aria-expanded') === 'true';
-    btn.setAttribute('aria-expanded', String(!open));
-    body.classList.toggle('open', !open);
+  const b = document.getElementById('acc'), c = document.getElementById('accc');
+  if(!b) return;
+  b.addEventListener('click', () => {
+    const open = b.getAttribute('aria-expanded') === 'true';
+    b.setAttribute('aria-expanded', String(!open));
+    // max-height cannot transition to `auto`, so the target is measured at open time.
+    c.style.maxHeight = open ? '0px' : c.scrollHeight + 'px';
   });
-  paintHeatmap();
 }
 </script>
 </body>
