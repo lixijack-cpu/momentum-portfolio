@@ -173,16 +173,6 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
         threads=True,
     )
     close = _extract_close(raw, symbols)
-    missing = [
-        symbol
-        for symbol in symbols
-        if symbol not in close.columns or close[symbol].dropna().empty
-    ]
-    if missing:
-        raise SnapshotBuildError(
-            "Yahoo Finance returned no 5-day closing price for: " + ", ".join(missing)
-        )
-
     # During the session yfinance labels the moving last trade as today's Close.
     # It is not a closing price yet and makes repeated same-day runs non-idempotent.
     # The scheduled job runs at 16:30 ET, so today's row becomes eligible only once
@@ -192,6 +182,16 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
         close = close.loc[close.index.date < now_et.date()]
     if close.empty:
         raise SnapshotBuildError("Yahoo Finance returned no completed closing sessions")
+    missing = [
+        symbol
+        for symbol in symbols
+        if symbol not in close.columns or close[symbol].dropna().empty
+    ]
+    if missing:
+        raise SnapshotBuildError(
+            "Yahoo Finance returned no completed 5-day closing price for: "
+            + ", ".join(missing)
+        )
     return close.reindex(columns=symbols)
 
 
