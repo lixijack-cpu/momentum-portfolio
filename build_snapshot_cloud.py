@@ -410,6 +410,7 @@ def build_snapshot() -> tuple[dict, dict[str, object]]:
 
     # Certified research sections remain untouched.  Only fields backed by the
     # public CSVs or current market closes are replaced or added here.
+    snapshot["generated_at"] = last_updated
     snapshot["as_of"] = price_as_of
     snapshot["equity_curve"]["live"] = live_curve
     snapshot["equity_curve"]["spy"] = _rebuild_spy_curve(snapshot, history)
