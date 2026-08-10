@@ -1,0 +1,79 @@
+name: Daily Dashboard Update
+
+on:
+  schedule:
+    # GitHub cron is UTC. Run at both possible UTC times, then keep only the
+    # invocation whose wall-clock hour is 16 in America/New_York. This remains
+    # correct across EST/EDT transitions.
+    - cron: '30 20 * * 1-5'
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:            # allow manual trigger for testing
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check New York schedule
+        id: schedule
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "$(TZ=America/New_York date +%H)" == "16" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: steps.schedule.outputs.run == 'true'
+        run: pip install pandas yfinance
+
+      - name: Build updated snapshot
+        if: steps.schedule.outputs.run == 'true'
+        run: python build_snapshot_cloud.py --output portfolio_snapshot.json
+
+      - name: Commit and push
+        if: steps.schedule.outputs.run == 'true'
+        run: |
+          git config user.email "lixijack@gmail.com"
+          git config user.name "Jack Power"
+          git add portfolio_snapshot.json shadow_live_track.csv portfolio_allocation.csv
+          git diff --staged --quiet || git commit -m "Auto daily update $(date -u +%Y-%m-%d)"
+          git push
+
+      # Pushes made with GITHUB_TOKEN do not trigger the separate Pages workflow,
+      # so this job deploys the just-built files directly.
+      - name: Set up Pages
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to Pages
+        if: steps.schedule.outputs.run == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4
