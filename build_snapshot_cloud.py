@@ -1,153 +1,100 @@
 #!/usr/bin/env python3
-"""Refresh the public dashboard's live data without the research stack.
+"""Refresh the public dashboard's live prices without rebuilding the book.
 
-The builder deliberately depends only on pandas, yfinance, and the Python
-standard library.  It reuses the certified backtest sections already present
-in the public snapshot, then rebuilds holdings and live performance from the
-two small CSV exports that can safely live in the public repository.
+``portfolio_snapshot.json`` is produced by the research pipeline and is the only
+source of truth for the dashboard.  Between rebalances the book is buy-and-hold,
+so the share counts are fixed and the only things that legitimately move day to
+day are the prices.  This script therefore *updates* the published snapshot in
+place; it never rebuilds it and never reads a holdings file.
+
+An earlier version rebuilt holdings from ``portfolio_allocation.csv`` (the full
+104-name production book) and re-derived the live NAV from the 85-name shadow
+track.  Both are the wrong book: the dashboard publishes a 10-name small
+account.  That is the regression the validation gate below exists to prevent.
+
+Every certified section -- headline, the backtest/simulation/SPY curves, crash
+table, sector history, monthly returns, notes -- is carried through untouched.
+The gate runs against the finished payload *before* anything is written, and any
+failure leaves the file on disk exactly as it was.
+
+Depends only on pandas, yfinance, and the standard library.
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
 
 
-STARTING_NAV = 10_000.0
+# The exact top-level shape index.html reads.  No more, no less.
+EXPECTED_TOP_LEVEL = (
+    "schema_version",
+    "generated_at",
+    "as_of",
+    "headline",
+    "equity_curve",
+    "live",
+    "crash_table",
+    "sector_history",
+    "monthly_returns",
+    "holdings",
+    "notes",
+)
+
+# Certified research output.  Nothing here may modify these.
+FROZEN_TOP_LEVEL = (
+    "schema_version",
+    "headline",
+    "crash_table",
+    "sector_history",
+    "monthly_returns",
+    "notes",
+)
+FROZEN_CURVES = ("backtest", "simulation", "spy")
+
+POSITION_FIELDS = ("ticker", "name", "sector", "weight", "value", "shares", "price")
+
+# A single session cannot plausibly move a diversified 10-name book this far.
+# Anything larger is a bad Yahoo print, not a real return.
+MAX_NAV_MOVE = 0.25
+
+# Tolerate the odd halted or delisted name, but refuse to mark the whole book
+# to market off a handful of quotes.
+MIN_PRICE_COVERAGE = 0.8
 
 
-class SnapshotBuildError(RuntimeError):
-    """Raised when a cloud snapshot cannot be built without stale data."""
+class SnapshotUpdateError(RuntimeError):
+    """Raised when the snapshot cannot be refreshed safely."""
 
 
-def _unique_paths(paths: list[Path]) -> list[Path]:
-    seen: set[Path] = set()
-    unique = []
-    for path in paths:
-        resolved = path.resolve()
-        if resolved not in seen:
-            seen.add(resolved)
-            unique.append(resolved)
-    return unique
-
-
-def _roots() -> list[Path]:
-    """Support both ``scripts/`` in the research repo and repo-root copies."""
-
-    script = Path(__file__).resolve()
-    script_root = script.parent.parent if script.parent.name == "scripts" else script.parent
-    return _unique_paths([Path.cwd(), script_root])
-
-
-def _find_input(nested: Path, flat: Path) -> Path:
-    candidates = _unique_paths(
-        [candidate for root in _roots() for candidate in (root / nested, root / flat)]
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise SnapshotBuildError(
-        "Required input is missing; checked: "
-        + ", ".join(str(candidate) for candidate in candidates)
-    )
-
-
-def _is_compatible_seed(payload: object) -> bool:
-    if not isinstance(payload, dict):
-        return False
-    headline = payload.get("headline")
-    curve = payload.get("equity_curve")
-    return (
-        isinstance(headline, dict)
-        and "cagr" in headline
-        and "sharpe" in headline
-        and isinstance(curve, dict)
-        and isinstance(curve.get("backtest"), list)
-    )
-
-
-def _load_seed() -> tuple[Path, dict]:
-    """Load the site-compatible snapshot while preserving a newer local schema.
-
-    ``portfolio_snapshot.json`` is the normal seed in both repositories.  The
-    research worktree can temporarily contain the newer Phase 66 privacy-export
-    schema at that path, while ``quant_fund_snapshot.json`` remains the dashboard-
-    compatible seed.  Falling back avoids overwriting or publishing an incompatible
-    in-progress artifact.
-    """
-
-    relative_candidates = (
-        Path("reports/public/portfolio_snapshot.json"),
-        Path("portfolio_snapshot.json"),
-        Path("reports/public/quant_fund_snapshot.json"),
-        Path("quant_fund_snapshot.json"),
-    )
-    checked = []
-    for candidate in _unique_paths(
-        [root / relative for root in _roots() for relative in relative_candidates]
-    ):
-        if not candidate.is_file():
-            continue
-        checked.append(candidate)
-        try:
-            payload = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if _is_compatible_seed(payload):
-            return candidate, payload
-    raise SnapshotBuildError(
-        "No dashboard-compatible snapshot seed was found. Expected headline.cagr, "
-        "headline.sharpe, and equity_curve.backtest in one of: "
-        + ", ".join(str(path) for path in checked or relative_candidates)
-    )
-
-
-def _read_allocation(path: Path) -> pd.DataFrame:
-    frame = pd.read_csv(path)
-    required = {"ticker", "weight"}
-    missing = sorted(required.difference(frame.columns))
-    if missing:
-        raise SnapshotBuildError(f"{path} is missing columns: {', '.join(missing)}")
-
-    frame = frame.copy()
-    frame["ticker"] = frame["ticker"].astype("string").str.strip().str.upper()
-    frame["weight"] = pd.to_numeric(frame["weight"], errors="coerce")
-    frame = frame.loc[frame["weight"].fillna(0.0) > 0.0].copy()
-    if frame.empty:
-        raise SnapshotBuildError(f"{path} contains no positive-weight holdings")
-    if frame["ticker"].isna().any() or (frame["ticker"] == "").any():
-        raise SnapshotBuildError(f"{path} contains a blank ticker")
-    duplicates = sorted(frame.loc[frame["ticker"].duplicated(False), "ticker"].unique())
-    if duplicates:
-        raise SnapshotBuildError(
-            f"{path} contains duplicate tickers: {', '.join(duplicates)}"
-        )
-    if float(frame["weight"].sum()) > 1.000001:
-        raise SnapshotBuildError(
-            f"{path} weights sum to {frame['weight'].sum():.6f}, above 100%"
-        )
-    return frame.reset_index(drop=True)
+# ---------------------------------------------------------------------------
+# Price retrieval
+# ---------------------------------------------------------------------------
 
 
 def _extract_close(download: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
+    """Normalise yfinance's several response shapes into a Close-price frame."""
+
     if download.empty:
-        raise SnapshotBuildError("Yahoo Finance returned no price observations")
+        raise SnapshotUpdateError("Yahoo Finance returned no price observations")
 
     if isinstance(download.columns, pd.MultiIndex):
         close = None
         for level in range(download.columns.nlevels):
-            values = download.columns.get_level_values(level)
-            if "Close" in values:
+            if "Close" in download.columns.get_level_values(level):
                 close = download.xs("Close", axis=1, level=level, drop_level=True)
                 break
         if close is None:
-            raise SnapshotBuildError("Yahoo Finance response has no Close field")
+            raise SnapshotUpdateError("Yahoo Finance response has no Close field")
     else:
         if "Close" not in download.columns:
-            raise SnapshotBuildError("Yahoo Finance response has no Close field")
+            raise SnapshotUpdateError("Yahoo Finance response has no Close field")
         close = download[["Close"]].copy()
         close.columns = [symbols[0]]
 
@@ -163,274 +110,255 @@ def _extract_close(download: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
 
 
 def _download_closes(tickers: list[str]) -> pd.DataFrame:
-    symbols = list(dict.fromkeys([*tickers, "SPY"]))
     raw = yf.download(
-        symbols,
+        tickers,
         period="5d",
         interval="1d",
         auto_adjust=False,
         progress=False,
         threads=True,
     )
-    close = _extract_close(raw, symbols)
+    close = _extract_close(raw, tickers)
+
     # During the session yfinance labels the moving last trade as today's Close.
     # It is not a closing price yet and makes repeated same-day runs non-idempotent.
-    # The scheduled job runs at 16:30 ET, so today's row becomes eligible only once
-    # the regular session has actually ended.
+    # Today's row becomes eligible only once the regular session has actually ended.
     now_et = pd.Timestamp.now(tz="America/New_York")
     if now_et.weekday() < 5 and now_et.strftime("%H:%M") < "16:00":
         close = close.loc[close.index.date < now_et.date()]
     if close.empty:
-        raise SnapshotBuildError("Yahoo Finance returned no completed closing sessions")
-    missing = [
-        symbol
-        for symbol in symbols
-        if symbol not in close.columns or close[symbol].dropna().empty
-    ]
-    if missing:
-        raise SnapshotBuildError(
-            "Yahoo Finance returned no completed 5-day closing price for: "
-            + ", ".join(missing)
+        raise SnapshotUpdateError("Yahoo Finance returned no completed closing sessions")
+    return close
+
+
+def _latest_prices(
+    closes: pd.DataFrame, positions: list[dict]
+) -> tuple[dict[str, float], list[str], str]:
+    """Last completed close per ticker.
+
+    A ticker with no fresh quote keeps the price already in the snapshot rather
+    than failing the run -- a halted or delisted name should not freeze the whole
+    dashboard.  The as-of date is taken from the tickers that did price.
+    """
+
+    prices: dict[str, float] = {}
+    stale: list[str] = []
+    dates: list[pd.Timestamp] = []
+
+    for position in positions:
+        ticker = str(position["ticker"])
+        series = (
+            closes[ticker].dropna()
+            if ticker in closes.columns
+            else pd.Series(dtype="float64")
         )
-    return close.reindex(columns=symbols)
-
-
-def _history_from_seed(seed: dict) -> pd.DataFrame:
-    rows = []
-    for row in seed.get("daily_returns", []):
-        if not isinstance(row, dict):
+        series = series.loc[series > 0.0]
+        if series.empty:
+            prices[ticker] = float(position["price"])
+            stale.append(ticker)
             continue
-        rows.append(
-            {
-                "date": row.get("date"),
-                "portfolio_return": row.get(
-                    "portfolio_return", row.get("shadow_daily_return")
-                ),
-                "benchmark_return": row.get(
-                    "benchmark_return", row.get("sp500_daily_return")
-                ),
-            }
+        prices[ticker] = float(series.iloc[-1])
+        dates.append(pd.Timestamp(series.index[-1]))
+
+    if not dates:
+        raise SnapshotUpdateError(
+            "Yahoo Finance returned no usable close for any holding"
         )
-    return pd.DataFrame(rows, columns=["date", "portfolio_return", "benchmark_return"])
-
-
-def _history_from_csv(path: Path) -> pd.DataFrame:
-    frame = pd.read_csv(path)
-    required = {"date", "shadow_daily_return", "sp500_daily_return"}
-    missing = sorted(required.difference(frame.columns))
-    if missing:
-        raise SnapshotBuildError(f"{path} is missing columns: {', '.join(missing)}")
-    return frame.loc[:, list(required)].rename(
-        columns={
-            "shadow_daily_return": "portfolio_return",
-            "sp500_daily_return": "benchmark_return",
-        }
-    )
-
-
-def _calculated_history(closes: pd.DataFrame, allocation: pd.DataFrame) -> pd.DataFrame:
-    tickers = allocation["ticker"].tolist()
-    weights = allocation.set_index("ticker")["weight"]
-    returns = closes[tickers].pct_change(fill_method=None)
-    portfolio = returns.mul(weights, axis="columns").sum(
-        axis="columns", min_count=len(tickers)
-    )
-    benchmark = closes["SPY"].pct_change(fill_method=None)
-    return pd.DataFrame(
-        {
-            "date": closes.index,
-            "portfolio_return": portfolio,
-            "benchmark_return": benchmark,
-        }
-    ).dropna(subset=["portfolio_return", "benchmark_return"])
-
-
-def _merge_history(
-    seed: dict,
-    history_path: Path,
-    closes: pd.DataFrame,
-    allocation: pd.DataFrame,
-) -> pd.DataFrame:
-    sources = [_history_from_seed(seed), _history_from_csv(history_path)]
-    existing = pd.concat(
-        [source for source in sources if not source.empty], ignore_index=True
-    )
-    existing["date"] = pd.to_datetime(existing["date"], errors="coerce")
-    existing = existing.dropna(subset=["date"]).sort_values("date")
-    existing = existing.drop_duplicates("date", keep="last")
-
-    calculated = _calculated_history(closes, allocation)
-    calculated = calculated.loc[~calculated["date"].isin(existing["date"])]
-    merged = pd.concat([existing, calculated], ignore_index=True).sort_values("date")
-    merged = merged.drop_duplicates("date", keep="first").reset_index(drop=True)
-    for column in ("portfolio_return", "benchmark_return"):
-        merged[column] = pd.to_numeric(merged[column], errors="coerce")
-        invalid = merged[column].isna() | (merged[column] <= -1.0)
-        if invalid.any():
-            dates = merged.loc[invalid, "date"].dt.strftime("%Y-%m-%d").tolist()
-            raise SnapshotBuildError(
-                f"Invalid {column} observations on: {', '.join(dates)}"
-            )
-    if merged.empty:
-        raise SnapshotBuildError("Live performance history is empty")
-    return merged
-
-
-def _latest_prices(closes: pd.DataFrame, tickers: list[str]) -> tuple[dict[str, float], str]:
-    prices = {}
-    dates = []
-    for ticker in tickers:
-        observations = closes[ticker].dropna()
-        prices[ticker] = float(observations.iloc[-1])
-        dates.append(pd.Timestamp(observations.index[-1]))
-    return prices, max(dates).strftime("%Y-%m-%d")
-
-
-def _display_name(value: object, ticker: str) -> str:
-    if value is None or pd.isna(value) or not str(value).strip():
-        return ticker
-    return " ".join(word.title() for word in str(value).strip().split())
-
-
-def _build_holdings(
-    allocation: pd.DataFrame,
-    prices: dict[str, float],
-    nav: float,
-    as_of: str,
-    previous: object,
-) -> tuple[dict, list[dict]]:
-    ordered = allocation.sort_values("weight", ascending=False, kind="mergesort")
-    positions = []
-    for row in ordered.to_dict(orient="records"):
-        ticker = str(row["ticker"])
-        weight = float(row["weight"])
-        price = prices[ticker]
-        value = nav * weight
-        sector = row.get("sector")
-        if sector is None or pd.isna(sector) or not str(sector).strip():
-            sector = "Other"
-        positions.append(
-            {
-                "ticker": ticker,
-                "name": _display_name(row.get("name"), ticker),
-                "sector": str(sector),
-                "weight": round(weight, 8),
-                "value": round(value, 2),
-                "shares": round(value / price, 4),
-                "price": round(price, 4),
-            }
+    coverage = (len(positions) - len(stale)) / len(positions)
+    if coverage < MIN_PRICE_COVERAGE:
+        raise SnapshotUpdateError(
+            f"Only {coverage:.0%} of holdings priced (need {MIN_PRICE_COVERAGE:.0%}); "
+            "missing: " + ", ".join(stale)
         )
-
-    last_rebalance = None
-    if "rebalance" in allocation.columns:
-        dates = pd.to_datetime(allocation["rebalance"], errors="coerce").dropna()
-        if not dates.empty:
-            last_rebalance = dates.max().strftime("%Y-%m-%d")
-    if last_rebalance is None and isinstance(previous, dict):
-        last_rebalance = previous.get("last_rebalance")
-    return (
-        {"as_of": as_of, "last_rebalance": last_rebalance, "positions": positions},
-        positions,
-    )
+    return prices, stale, max(dates).strftime("%Y-%m-%d")
 
 
-def _static_endpoint(seed: dict) -> float:
-    curve = seed["equity_curve"]
-    points = curve.get("simulation") or curve["backtest"]
-    if not points or "v" not in points[-1]:
-        raise SnapshotBuildError("Static equity curve has no terminal NAV")
-    return float(points[-1]["v"])
+# ---------------------------------------------------------------------------
+# Snapshot update
+# ---------------------------------------------------------------------------
 
 
-def _rebuild_spy_curve(seed: dict, history: pd.DataFrame) -> list[dict]:
-    static_end = str(seed["headline"].get("window_end", "9999-12-31"))
-    static = [
-        point
-        for point in seed["equity_curve"].get("spy", [])
-        if str(point.get("d", "")) <= static_end
-    ]
-    if not static:
-        return seed["equity_curve"].get("spy", [])
+def update_snapshot(base: dict) -> tuple[dict, dict]:
+    """Return a price-refreshed copy of ``base`` plus a summary of what moved."""
 
-    extension = history.loc[history["date"] > pd.Timestamp(static_end)].copy()
-    values = float(static[-1]["v"]) * (1.0 + extension["benchmark_return"]).cumprod()
-    return static + [
-        {"d": stamp.strftime("%Y-%m-%d"), "v": round(float(value), 2)}
-        for stamp, value in zip(extension["date"], values)
-    ]
+    snapshot = copy.deepcopy(base)
 
+    holdings = snapshot.get("holdings")
+    if not isinstance(holdings, dict) or not isinstance(holdings.get("positions"), list):
+        raise SnapshotUpdateError("snapshot.holdings.positions is missing or not a list")
+    positions = holdings["positions"]
+    if not positions:
+        raise SnapshotUpdateError("snapshot.holdings.positions is empty")
 
-def build_snapshot() -> tuple[dict, dict[str, object]]:
-    allocation_path = _find_input(
-        Path("reports/portfolio_allocation.csv"), Path("portfolio_allocation.csv")
-    )
-    history_path = _find_input(
-        Path("reports/shadow_live_track.csv"), Path("shadow_live_track.csv")
-    )
-    seed_path, snapshot = _load_seed()
+    live = snapshot.get("live")
+    if not isinstance(live, dict):
+        raise SnapshotUpdateError("snapshot.live is missing")
+    base_nav = float(live["nav"])
+    rebase_factor = float(live["rebase_factor"])
+    inception_nav = float(live["inception_nav"])
 
-    allocation = _read_allocation(allocation_path)
-    tickers = allocation["ticker"].tolist()
-    closes = _download_closes(tickers)
-    prices, price_as_of = _latest_prices(closes, tickers)
-    history = _merge_history(snapshot, history_path, closes, allocation)
+    # Weights do not sum to 1: the account holds a cash residual.  It is not
+    # invested, so it rides through untouched while the equity is remarked.
+    cash = round(base_nav - sum(float(p["value"]) for p in positions), 2)
 
-    nav_series = STARTING_NAV * (1.0 + history["portfolio_return"]).cumprod()
-    nav = float(nav_series.iloc[-1])
-    rebase_factor = _static_endpoint(snapshot) / STARTING_NAV
-    live_curve = [
-        {
-            "d": stamp.strftime("%Y-%m-%d"),
-            "v": round(float(value) * rebase_factor, 2),
-        }
-        for stamp, value in zip(history["date"], nav_series)
-    ]
-    history_as_of = history["date"].iloc[-1].strftime("%Y-%m-%d")
-    last_updated = pd.Timestamp(price_as_of).tz_localize("UTC").isoformat()
-    live_stats = {
-        "nav": round(nav, 2),
-        "inception_date": history["date"].iloc[0].strftime("%Y-%m-%d"),
-        "inception_nav": STARTING_NAV,
-        "since_inception_return": round(nav / STARTING_NAV - 1.0, 8),
-        "days_live": int(len(history)),
-        "last_updated": history_as_of,
-        "rebase_factor": round(rebase_factor, 8),
-    }
-    holdings, current_holdings = _build_holdings(
-        allocation, prices, nav, price_as_of, snapshot.get("holdings")
-    )
-    daily_returns = [
-        {
-            "date": row.date.strftime("%Y-%m-%d"),
-            "portfolio_return": round(float(row.portfolio_return), 10),
-            "benchmark_return": round(float(row.benchmark_return), 10),
-        }
-        for row in history.itertuples(index=False)
-    ]
+    closes = _download_closes([str(p["ticker"]) for p in positions])
+    prices, stale, price_as_of = _latest_prices(closes, positions)
 
-    # Certified research sections remain untouched.  Only fields backed by the
-    # public CSVs or current market closes are replaced or added here.
-    snapshot["generated_at"] = last_updated
+    for position in positions:
+        price = prices[str(position["ticker"])]
+        position["price"] = round(price, 4)
+        position["value"] = round(float(position["shares"]) * price, 2)
+
+    nav = round(sum(float(p["value"]) for p in positions) + cash, 2)
+    if nav <= 0.0:
+        raise SnapshotUpdateError(f"Refreshed NAV is not positive: {nav}")
+    for position in positions:
+        position["weight"] = round(float(position["value"]) / nav, 8)
+
+    # Live curve: replace today's point on a re-run, append a new session, and
+    # refuse to walk backwards into already-published history.
+    curve = snapshot["equity_curve"]["live"]
+    point = {"d": price_as_of, "v": round(nav * rebase_factor, 2)}
+    if curve and str(curve[-1]["d"]) > price_as_of:
+        raise SnapshotUpdateError(
+            f"Latest close {price_as_of} predates the published curve "
+            f"({curve[-1]['d']}); refusing to rewrite history"
+        )
+    if curve and str(curve[-1]["d"]) == price_as_of:
+        curve[-1] = point
+    else:
+        curve.append(point)
+
+    holdings["as_of"] = price_as_of  # last_rebalance is owned by the research pipeline
+    live["nav"] = nav
+    live["since_inception_return"] = round(nav / inception_nav - 1.0, 8)
+    live["days_live"] = len(curve)
+    live["last_updated"] = price_as_of
+
     snapshot["as_of"] = price_as_of
-    snapshot["equity_curve"]["live"] = live_curve
-    snapshot["equity_curve"]["spy"] = _rebuild_spy_curve(snapshot, history)
-    snapshot["live"] = live_stats
-    snapshot["holdings"] = holdings
-    snapshot["current_holdings"] = current_holdings
-    snapshot["live_equity_curve"] = live_curve
-    snapshot["daily_returns"] = daily_returns
-    snapshot["last_updated"] = last_updated
-    snapshot["live_performance_stats"] = live_stats
+    snapshot["generated_at"] = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    )
 
-    metadata = {
-        "seed": seed_path,
-        "allocation": allocation_path,
-        "history": history_path,
+    summary = {
         "price_as_of": price_as_of,
-        "holdings": len(current_holdings),
-        "live_days": len(history),
+        "positions": len(positions),
+        "stale": stale,
+        "nav": nav,
+        "base_nav": base_nav,
+        "nav_change": nav / base_nav - 1.0,
+        "live_days": len(curve),
+        "cash": cash,
     }
-    return snapshot, metadata
+    return snapshot, summary
+
+
+# ---------------------------------------------------------------------------
+# Validation gate
+# ---------------------------------------------------------------------------
+
+
+def _canonical(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def validate(base: dict, updated: dict) -> None:
+    """Refuse to publish anything that is not a pure price refresh of ``base``."""
+
+    if tuple(updated) != EXPECTED_TOP_LEVEL:
+        raise SnapshotUpdateError(
+            "Top-level keys changed.\n  expected: "
+            f"{list(EXPECTED_TOP_LEVEL)}\n  got:      {list(updated)}"
+        )
+
+    for key in FROZEN_TOP_LEVEL:
+        if _canonical(updated[key]) != _canonical(base[key]):
+            raise SnapshotUpdateError(f"Certified section '{key}' was modified")
+    for name in FROZEN_CURVES:
+        if _canonical(updated["equity_curve"][name]) != _canonical(
+            base["equity_curve"][name]
+        ):
+            raise SnapshotUpdateError(f"Certified curve 'equity_curve.{name}' was modified")
+    if tuple(updated["equity_curve"]) != tuple(base["equity_curve"]):
+        raise SnapshotUpdateError("equity_curve keys changed")
+
+    old_positions = base["holdings"]["positions"]
+    new_positions = updated["holdings"]["positions"]
+    if len(new_positions) != len(old_positions):
+        raise SnapshotUpdateError(
+            f"Holdings count changed: {len(old_positions)} -> {len(new_positions)}. "
+            "The dashboard publishes the small account, not the production book."
+        )
+    if updated["holdings"]["last_rebalance"] != base["holdings"]["last_rebalance"]:
+        raise SnapshotUpdateError("holdings.last_rebalance was modified")
+
+    for old, new in zip(old_positions, new_positions):
+        if tuple(new) != POSITION_FIELDS:
+            raise SnapshotUpdateError(
+                f"Position {new.get('ticker')} fields changed: {list(new)}"
+            )
+        for field in ("ticker", "name", "sector", "shares"):
+            if new[field] != old[field]:
+                raise SnapshotUpdateError(
+                    f"Position {old['ticker']}.{field} changed: {old[field]} -> {new[field]}"
+                )
+        if not isinstance(new["price"], (int, float)) or new["price"] <= 0:
+            raise SnapshotUpdateError(f"Position {new['ticker']} has a non-positive price")
+        if new["weight"] <= 0:
+            raise SnapshotUpdateError(f"Position {new['ticker']} has a non-positive weight")
+        expected_value = round(float(new["shares"]) * float(new["price"]), 2)
+        if abs(float(new["value"]) - expected_value) > 0.01:
+            raise SnapshotUpdateError(
+                f"Position {new['ticker']} breaks value == shares * price"
+            )
+
+    total_weight = sum(float(p["weight"]) for p in new_positions)
+    if total_weight > 1.0 + 1e-6:
+        raise SnapshotUpdateError(f"Weights sum to {total_weight:.6f}, above 100%")
+
+    live = updated["live"]
+    for field in ("inception_date", "inception_nav", "rebase_factor"):
+        if live[field] != base["live"][field]:
+            raise SnapshotUpdateError(f"live.{field} was modified")
+
+    nav = float(live["nav"])
+    move = nav / float(base["live"]["nav"]) - 1.0
+    if abs(move) > MAX_NAV_MOVE:
+        raise SnapshotUpdateError(
+            f"NAV moved {move:+.2%} in one update (limit {MAX_NAV_MOVE:.0%}); "
+            "this looks like a bad price, not a return"
+        )
+    cash = round(float(base["live"]["nav"]) - sum(float(p["value"]) for p in old_positions), 2)
+    expected_nav = sum(float(p["value"]) for p in new_positions) + cash
+    if abs(nav - expected_nav) > 0.02:
+        raise SnapshotUpdateError(
+            f"live.nav {nav:.2f} does not reconcile to positions plus cash {expected_nav:.2f}"
+        )
+
+    curve = updated["equity_curve"]["live"]
+    base_curve = base["equity_curve"]["live"]
+    dates = [str(point["d"]) for point in curve]
+    if dates != sorted(dates) or len(set(dates)) != len(dates):
+        raise SnapshotUpdateError("equity_curve.live dates are not strictly increasing")
+    if base_curve and _canonical(curve[0]) != _canonical(base_curve[0]):
+        raise SnapshotUpdateError("The live inception anchor was modified")
+    if len(curve) < len(base_curve):
+        raise SnapshotUpdateError("equity_curve.live lost points")
+    if live["days_live"] != len(curve):
+        raise SnapshotUpdateError("live.days_live disagrees with the live curve length")
+    expected_v = round(nav * float(live["rebase_factor"]), 2)
+    if abs(float(curve[-1]["v"]) - expected_v) > 0.02:
+        raise SnapshotUpdateError("The last live point is not NAV * rebase_factor")
+    if str(curve[-1]["d"]) != str(updated["as_of"]):
+        raise SnapshotUpdateError("as_of disagrees with the last live point")
+
+    # Must serialise cleanly: NaN/Infinity would produce JSON the browser rejects.
+    json.dumps(updated, separators=(",", ":"), allow_nan=False)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -438,31 +366,42 @@ def main() -> int:
     parser.add_argument(
         "--output",
         default="portfolio_snapshot.json",
-        help="Destination JSON path",
+        help="Snapshot to refresh in place (also the base it is built from)",
+    )
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Read the base from here instead of --output",
     )
     args = parser.parse_args()
 
-    try:
-        snapshot, metadata = build_snapshot()
-    except (OSError, ValueError, SnapshotBuildError) as exc:
-        parser.exit(2, f"error: {exc}\n")
-
     destination = Path(args.output)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    source = Path(args.input) if args.input else destination
+
+    # Anything that goes wrong from here on leaves the published file untouched.
+    # Not writing is strictly safer than rewriting: a rewrite can fail mid-flight.
+    try:
+        base = json.loads(source.read_text(encoding="utf-8"))
+        updated, summary = update_snapshot(base)
+        validate(base, updated)
+    except Exception as exc:  # noqa: BLE001 - the dashboard must never go down
+        print(f"snapshot refresh skipped: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"keeping the last known good snapshot at {destination}", file=sys.stderr)
+        return 0
+
+    payload = json.dumps(updated, separators=(",", ":"), allow_nan=False) + "\n"
     temporary = destination.with_suffix(destination.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(snapshot, separators=(",", ":"), allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
+    temporary.write_text(payload, encoding="utf-8")
     temporary.replace(destination)
 
     print(
-        f"wrote {destination} with {metadata['holdings']} holdings and "
-        f"{metadata['live_days']} live days (prices {metadata['price_as_of']})"
+        f"refreshed {destination}: {summary['positions']} holdings priced "
+        f"{summary['price_as_of']}, NAV {summary['base_nav']:,.2f} -> "
+        f"{summary['nav']:,.2f} ({summary['nav_change']:+.2%}), "
+        f"{summary['live_days']} live days, cash {summary['cash']:,.2f}"
     )
-    print(f"  static seed: {metadata['seed']}")
-    print(f"  allocation: {metadata['allocation']}")
-    print(f"  live history: {metadata['history']}")
+    if summary["stale"]:
+        print("  kept previous price for: " + ", ".join(summary["stale"]))
     return 0
 
 

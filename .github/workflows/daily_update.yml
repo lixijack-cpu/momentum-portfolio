@@ -52,16 +52,43 @@ jobs:
         if: steps.schedule.outputs.run == 'true'
         run: pip install pandas yfinance
 
+      # The builder refreshes prices in the checked-out snapshot in place. Every
+      # failure path inside it exits 0 and leaves the file untouched, so a Yahoo
+      # outage simply republishes yesterday's numbers instead of breaking the page.
       - name: Build updated snapshot
         if: steps.schedule.outputs.run == 'true'
         run: python build_snapshot_cloud.py --output portfolio_snapshot.json
+
+      # Defence in depth: never publish a snapshot the dashboard cannot render.
+      # Failing here stops the commit and the deploy, so Pages keeps serving the
+      # last good build.
+      - name: Verify snapshot
+        if: steps.schedule.outputs.run == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("portfolio_snapshot.json"))
+          expected = ["schema_version", "generated_at", "as_of", "headline",
+                      "equity_curve", "live", "crash_table", "sector_history",
+                      "monthly_returns", "holdings", "notes"]
+          assert list(d) == expected, f"top-level keys are {list(d)}"
+          assert d["headline"].get("cagr") and d["headline"].get("sharpe"), "headline is empty"
+          n = len(d["holdings"]["positions"])
+          # The dashboard publishes the small account. Anything near 100 names means
+          # something rebuilt the book from the production allocation again.
+          assert 1 <= n <= 25, f"expected the small account, found {n} holdings"
+          assert len(d["equity_curve"]["backtest"]) > 5000, "backtest curve truncated"
+          assert d["live"]["nav"] > 0, "live NAV is not positive"
+          print(f"ok: {n} holdings, cagr={d['headline']['cagr']}, "
+                f"sharpe={d['headline']['sharpe']}, as_of={d['as_of']}")
+          PY
 
       - name: Commit and push
         if: steps.schedule.outputs.run == 'true'
         run: |
           git config user.email "lixijack@gmail.com"
           git config user.name "Jack Power"
-          git add portfolio_snapshot.json shadow_live_track.csv portfolio_allocation.csv
+          git add portfolio_snapshot.json
           git diff --staged --quiet || git commit -m "Auto daily update $(date -u +%Y-%m-%d)"
           git push
 
