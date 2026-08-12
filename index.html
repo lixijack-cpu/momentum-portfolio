@@ -488,8 +488,15 @@ async function init(){
 
   if (account === 'production') {
     jsonFile = 'production_snapshot.json';
+    window.CHART_SCALE = 500;
+    window.START_AUM = 5000000;
   } else if (account === 'shadow') {
     jsonFile = 'shadow_snapshot.json';
+    window.CHART_SCALE = 500;
+    window.START_AUM = 5000000;
+  } else {
+    window.CHART_SCALE = 1;
+    window.START_AUM = 10000;
   }
 
   try{
@@ -572,7 +579,7 @@ function equityHTML(d){
     <div class="card-hdr">
       <div>
         <div class="card-title">Performance Since ${ymLong(h.window_start.slice(0,7))}</div>
-        <div class="card-sub">Growth of ${usd(10000)}, net of costs · benchmarked against SPY</div>
+        <div class="card-sub">Growth of ${usd(window.START_AUM)}, net of costs · benchmarked against SPY</div>
       </div>
       <div class="card-stat">Total Return: <b>${pctBig(h.total_return)}</b> · vs SPY <b>${pctBig(spyTot)}</b></div>
     </div>
@@ -581,7 +588,7 @@ function equityHTML(d){
   </div>`;
 }
 
-const xy = arr => arr.map(p => ({x:p.d, y:p.v}));
+const xy = arr => arr.map(p => ({x:p.d, y:p.v * window.CHART_SCALE}));
 
 /* Vertical wash under a line: the token's own colour at `alpha` fading to transparent.
    Reading the rgb out of the CSS variable means the fill re-derives per theme instead of
@@ -724,7 +731,7 @@ function renderEquityCurve(d){
            ticks:{color:cv('--text-3'), maxRotation:0, autoSkip:true, font:{size:11}}},
         y:{grid:{color:cv('--border')}, border:{color:cv('--border')},
            ticks:{color:cv('--text-3'), font:{size:11},
-                  callback:v => '$' + (v/1000).toFixed(0) + 'k'}}
+                  callback:v => v >= 1000000 ? '$' + (v/1000000).toFixed(1) + 'M' : '$' + (v/1000).toFixed(0) + 'k'}}
       }
     },
     plugins:[crashShade, liveGlow, annotations]
@@ -748,7 +755,7 @@ function extTooltip(ctx){
   if(strat != null) html += `<div class="tt-r"><span>Strategy</span><span style="color:var(--chart-1);font-weight:600">${usd(strat)}</span></div>`;
   if(spy   != null) html += `<div class="tt-r"><span>SPY</span><span style="color:var(--text-3);font-weight:600">${usd(spy)}</span></div>`;
   if(strat != null && spy != null){
-    const diff = (strat/10000-1) - (spy/10000-1);
+    const diff = (strat/window.START_AUM-1) - (spy/window.START_AUM-1);
     html += `<div class="tt-r"><span>vs SPY</span><span style="color:var(${diff>=0?'--green':'--red'});font-weight:600">${diff>=0?'+':MINUS}${Math.abs(diff*100).toFixed(1)}pp</span></div>`;
   }
   tt.innerHTML = html;
