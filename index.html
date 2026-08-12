@@ -430,17 +430,17 @@ const charts = {};
 
 /* ===================== boot ===================== */
 async function init(){
+  const urlParams = new URLSearchParams(window.location.search);
+  const account = urlParams.get('account');
+  let jsonFile = 'portfolio_snapshot.json';
+
+  if (account === 'production') {
+    jsonFile = 'production_snapshot.json';
+  } else if (account === 'shadow') {
+    jsonFile = 'shadow_snapshot.json';
+  }
+
   try{
-    const urlParams = new URLSearchParams(window.location.search);
-    const account = urlParams.get('account');
-    let jsonFile = 'portfolio_snapshot.json';
-
-    if (account === 'production') {
-      jsonFile = 'production_snapshot.json';
-    } else if (account === 'shadow') {
-      jsonFile = 'shadow_snapshot.json';
-    }
-
     DATA = await fetch('./' + jsonFile, {cache:'no-store'}).then(r => {
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
