@@ -766,6 +766,7 @@ function holdingsHTML(d){
         <span class="chip" style="${CHIP[p.sector]||CHIP['Other']}">${p.sector}</span>
       </div>
       <div class="h-r2">${usd(p.value,2)} · ${p.shares} sh · ${usd(p.price,2)}/sh</div>
+      <div class="h-r2" style="color:var(--muted); font-style:italic;">${p.rationale || 'Selected by quantitative model'}</div>
       <div class="wbar"><i style="width:${(p.weight/maxW*100).toFixed(1)}%;background:${EDGE[p.sector]||'var(--blue)'}"></i></div>
       <div class="wlbl">${(p.weight*100).toFixed(1)}%</div>
     </div>`).join('');
@@ -774,7 +775,6 @@ function holdingsHTML(d){
     <div class="card-hdr"><div>
       <div class="card-title">Current Portfolio Holdings</div>
       <div class="card-sub">Small Account · ${pos.length} positions · valued ${dLong(h.as_of)}${h.last_rebalance ? ' · from the '+dLong(h.last_rebalance)+' rebalance' : ''}</div>
-      <div class="card-sub" style="margin-top: 6px; font-style: italic;">These 10 stocks represent the highest-conviction allocations from our broader 104-stock production model, mathematically selected for their deep valuation and accelerating price momentum.</div>
     </div></div>
     <div class="holdings-grid">${cards}</div>
     <div class="h-total">Total deployed: ${usd(total,2)} · ${pos.length} positions</div>
