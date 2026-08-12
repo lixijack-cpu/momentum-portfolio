@@ -385,6 +385,19 @@ footer a:hover{color:var(--blue)}
       <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
     </button>
   </div>
+  
+  <div class="card" style="margin-bottom: 24px; font-size: 0.95rem; line-height: 1.5;">
+    <h2 style="font-size: 1.1rem; margin-bottom: 12px; color: var(--accent);">Portfolio Architecture</h2>
+    <p style="margin-bottom: 12px; margin-top: 0;">
+      A live, self-updating systematic equity portfolio I built from scratch and run independently. The strategy selects from a universe of ~1,500 U.S. equities using a multi-factor model (earnings momentum, valuation, price momentum) with a macro regime overlay to adjust exposure between risk-on and risk-off environments.
+    </p>
+    <p style="margin-bottom: 12px;">
+      Backtested 20 years (Dec 2005 – present): <strong style="color: var(--accent);">13.81% CAGR</strong> / <strong style="color: var(--accent);">Sharpe 0.94</strong> / Max Drawdown -18.8%, outperforming the S&P 500 by +277 basis points per year. Live paper-traded since Jul 2026 with a small account tracker updated every market close.
+    </p>
+    <p style="margin-bottom: 0;">
+      The dashboard updates automatically every trading day. Built entirely in Python.
+    </p>
+  </div>
   <nav class="account-tabs" aria-label="Portfolio account views">
     <a href="?account=" class="tab" data-account="">Small Account (Default)</a>
     <a href="?account=production" class="tab" data-account="production">Production Model</a>
