@@ -390,12 +390,18 @@ footer a:hover{color:var(--blue)}
     <a href="?account=production" class="tab" data-account="production">Production Model</a>
     <a href="?account=shadow" class="tab" data-account="shadow">Shadow Track</a>
   </nav>
+  <div id="model-description" class="card-sub" style="margin-bottom: 24px; max-width: 800px;"></div>
   <script>
   (() => {
     const requestedAccount = new URLSearchParams(window.location.search).get('account');
     const activeAccount = requestedAccount === 'production' || requestedAccount === 'shadow'
       ? requestedAccount
       : '';
+    const descriptions = {
+      '': 'A concentrated 10-stock portfolio designed for low-capital retail execution, optimized to minimize transaction costs and fractional share rounding constraints.',
+      production: 'The primary institutional strategy. A 104-stock portfolio dynamically allocating across deep value, earnings surprise, and composite price momentum factors.',
+      shadow: 'An experimental 85-stock paper-trading track running in parallel to production to test Phase 25b alternative alpha signals and reduced concentration constraints.'
+    };
     const activeTab = document.querySelector(
       `.account-tabs .tab[data-account="${activeAccount}"]`
     );
@@ -403,6 +409,8 @@ footer a:hover{color:var(--blue)}
       activeTab.classList.add('active-tab');
       activeTab.setAttribute('aria-current', 'page');
     }
+    const description = document.getElementById('model-description');
+    if (description) description.innerText = descriptions[activeAccount];
   })();
   </script>
   <div id="app">
@@ -809,8 +817,8 @@ function holdingsHTML(d, account){
     return `<div class="card"><div class="card-title">Current Portfolio Holdings</div>
       <div class="card-sub" style="margin-top:8px">Positions are not currently published.</div></div>`;
   }
-  const accountLabel = account === 'production' ? 'Production Account'
-                     : account === 'shadow' ? 'Shadow Account'
+  const accountLabel = account === 'production' ? 'Production Model'
+                     : account === 'shadow' ? 'Shadow Track'
                      : 'Small Account';
   const hasFundedValues = pos.every(p => Number.isFinite(p.value));
   const total = hasFundedValues ? pos.reduce((s,p) => s + p.value, 0) : null;
