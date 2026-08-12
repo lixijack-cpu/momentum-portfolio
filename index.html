@@ -431,7 +431,17 @@ const charts = {};
 /* ===================== boot ===================== */
 async function init(){
   try{
-    DATA = await fetch('./portfolio_snapshot.json', {cache:'no-store'}).then(r => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const account = urlParams.get('account');
+    let jsonFile = 'portfolio_snapshot.json';
+
+    if (account === 'production') {
+      jsonFile = 'production_snapshot.json';
+    } else if (account === 'shadow') {
+      jsonFile = 'shadow_snapshot.json';
+    }
+
+    DATA = await fetch('./' + jsonFile, {cache:'no-store'}).then(r => {
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     });
@@ -447,7 +457,7 @@ async function init(){
   document.getElementById('app').innerHTML =
     statsHTML(DATA) + equityHTML(DATA) +
     '<div class="main-grid">' +
-      '<div class="col-left">'  + holdingsHTML(DATA) + crashHTML(DATA)   + '</div>' +
+      '<div class="col-left">'  + holdingsHTML(DATA, account) + crashHTML(DATA)   + '</div>' +
       '<div class="col-right">' + heatmapHTML(DATA)  + sectorHTML(DATA)  + '</div>' +
     '</div>' +
     aboutHTML(DATA);
@@ -749,13 +759,17 @@ const EDGE = {
   'Consumer Durables':'var(--amber)', 'Other':'var(--text-3)'
 };
 
-function holdingsHTML(d){
+function holdingsHTML(d, account){
   const h = d.holdings || {}, pos = h.positions || [];
   if(!pos.length){
     return `<div class="card"><div class="card-title">Current Portfolio Holdings</div>
       <div class="card-sub" style="margin-top:8px">Positions are not currently published.</div></div>`;
   }
-  const total = pos.reduce((s,p) => s + p.value, 0);
+  const accountLabel = account === 'production' ? 'Production Account'
+                     : account === 'shadow' ? 'Shadow Account'
+                     : 'Small Account';
+  const hasFundedValues = pos.every(p => Number.isFinite(p.value));
+  const total = hasFundedValues ? pos.reduce((s,p) => s + p.value, 0) : null;
   const maxW  = Math.max(...pos.map(p => p.weight));
 
   const cards = pos.map((p,i) => `
@@ -765,7 +779,9 @@ function holdingsHTML(d){
         <span class="h-co">${p.name}</span>
         <span class="chip" style="${CHIP[p.sector]||CHIP['Other']}">${p.sector}</span>
       </div>
-      <div class="h-r2">${usd(p.value,2)} · ${p.shares} sh · ${usd(p.price,2)}/sh</div>
+      ${Number.isFinite(p.value) && Number.isFinite(p.shares) && Number.isFinite(p.price)
+        ? `<div class="h-r2">${usd(p.value,2)} · ${p.shares} sh · ${usd(p.price,2)}/sh</div>`
+        : ''}
       <div class="h-r2" style="color:var(--muted); font-style:italic;">${p.rationale || 'Selected by quantitative model'}</div>
       <div class="wbar"><i style="width:${(p.weight/maxW*100).toFixed(1)}%;background:${EDGE[p.sector]||'var(--blue)'}"></i></div>
       <div class="wlbl">${(p.weight*100).toFixed(1)}%</div>
@@ -774,11 +790,11 @@ function holdingsHTML(d){
   return `<div class="card">
     <div class="card-hdr"><div>
       <div class="card-title">Current Portfolio Holdings</div>
-      <div class="card-sub">Small Account · ${pos.length} positions · valued ${dLong(h.as_of)}${h.last_rebalance ? ' · from the '+dLong(h.last_rebalance)+' rebalance' : ''}</div>
+      <div class="card-sub">${accountLabel} · ${pos.length} positions · valued ${dLong(h.as_of)}${h.last_rebalance ? ' · from the '+dLong(h.last_rebalance)+' rebalance' : ''}</div>
     </div></div>
     <div class="holdings-grid">${cards}</div>
-    <div class="h-total">Total deployed: ${usd(total,2)} · ${pos.length} positions</div>
-    <div class="h-note">Live small-account book marked at ${dLong(h.as_of)} closing prices. Bars are scaled to the largest position.</div>
+    <div class="h-total">${hasFundedValues ? 'Total deployed: '+usd(total,2)+' · ' : ''}${pos.length} positions</div>
+    <div class="h-note">${hasFundedValues ? 'Live funded book marked at '+dLong(h.as_of)+' closing prices.' : 'Target portfolio weights.'} Bars are scaled to the largest position.</div>
   </div>`;
 }
 
