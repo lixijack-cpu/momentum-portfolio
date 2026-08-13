@@ -1032,7 +1032,10 @@ function renderHoldings(s) {
       row.className = 'holding';
       row.innerHTML =
         `<div class="tkr">${esc(p.ticker)}</div>` +
-        `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
+        `<div class="co-col" style="display:flex;flex-direction:column;justify-content:center;overflow:hidden;">` +
+          `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
+          (p.rationale ? `<div class="rationale" style="font-size:0.75rem;color:var(--muted);margin-top:2px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.rationale)}</div>` : '') +
+        `</div>` +
         `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
         `<div class="wbar">` +
           // Floor the fill so a real but tiny weight still reads as a bar. Shadow's
