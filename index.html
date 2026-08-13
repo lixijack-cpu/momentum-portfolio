@@ -87,6 +87,9 @@ header{
 .dot.fresh{background:var(--green)}
 .dot.warn{background:var(--amber)}
 .dot.stale{background:var(--red)}
+/* Books remarked at rebalance rather than daily. A fixed date is correct for them, so
+   they get a neutral dot instead of a staleness warning that would only ever go red. */
+.dot.marked{background:var(--grey)}
 
 /* ---------- layout ---------- */
 main{max-width:1400px;margin:0 auto;padding:clamp(18px,3vw,32px);display:grid;gap:22px}
@@ -119,6 +122,9 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 .hero{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
 .stat .label{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.09em;font-weight:500}
 .stat .value{font-weight:800;font-size:clamp(2rem,4.2vw,2.7rem);line-height:1.1;margin:8px 0 2px;letter-spacing:-0.03em}
+/* Units ride at a smaller size so a value like "+296 bps/yr" stays on one line and the
+   number keeps the visual weight, instead of wrapping and unbalancing the stat row. */
+.stat .value .unit{font-size:.4em;font-weight:600;letter-spacing:0;margin-left:.2em}
 .stat .foot{color:var(--muted);font-size:.76rem}
 .v-blue{color:var(--blue)}.v-violet{color:#a78bfa}.v-amber{color:var(--amber)}.v-green{color:var(--green)}
 
@@ -134,20 +140,38 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 }
 .toggle button[aria-pressed="true"]{background:rgba(59,130,246,0.18);color:var(--ink)}
 .toggle button:hover{color:var(--ink)}
+/* Segmented control. Two properties here are load-bearing rather than cosmetic:
+   align-self:start stops the strip stretching across the grid column (a grid item
+   blockifies inline-flex to flex), and flex-wrap is what keeps the last tab reachable
+   -- the three labels are ~439px intrinsic against ~339px of usable width at a 375px
+   viewport, and body{overflow-x:hidden} clips the overflow rather than scrolling it.
+   The narrow breakpoint below switches to equal thirds so it never has to wrap at all. */
 .account-tabs{
-  display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:999px;
+  display:inline-flex;align-self:start;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
   padding:4px;gap:4px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.15);
 }
 .account-tabs .tab{
   color:var(--muted);text-decoration:none;white-space:nowrap;
   font:inherit;font-size:.85rem;font-weight:600;padding:8px 20px;border-radius:999px;
-  transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:color .2s cubic-bezier(.4,0,.2,1),background .2s cubic-bezier(.4,0,.2,1),
+             box-shadow .2s cubic-bezier(.4,0,.2,1);
 }
-.account-tabs .tab:hover{color:var(--ink)}
+.account-tabs .tab:hover{color:var(--ink);background:rgba(255,255,255,.04)}
 .account-tabs .tab[aria-current="page"]{
-  background:rgba(59,130,246,0.15);color:var(--blue);box-shadow:0 2px 8px rgba(59,130,246,0.15);
+  background:linear-gradient(180deg,rgba(59,130,246,.22),rgba(59,130,246,.13));
+  color:#dbeafe;
+  box-shadow:0 2px 8px rgba(59,130,246,.18),inset 0 1px 0 rgba(255,255,255,.10);
 }
 .account-tabs .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.scale-badge{
+  display:inline-flex;align-items:center;
+  padding:4px 11px;border-radius:999px;white-space:nowrap;
+  background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);
+  color:var(--amber);font-size:.66rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;
+}
+.curve-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #model-description{
   color:var(--muted);font-size:.82rem;line-height:1.6;
   max-width:80ch;margin-bottom:22px;
@@ -224,6 +248,15 @@ tbody tr:hover{background:rgba(255,255,255,.03)}
    boxes, which renders every weight bar empty. */
 .wbar .fill{display:block;height:100%;border-radius:4px;transition:width .5s ease}
 .wbar .pct{font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--ink-2);min-width:46px;text-align:right}
+.show-all{
+  display:block;width:100%;margin-top:14px;
+  background:rgba(255,255,255,.03);border:1px solid var(--border);
+  color:var(--ink-2);font:inherit;font-size:.8rem;font-weight:500;
+  padding:11px;border-radius:12px;cursor:pointer;
+  transition:background .18s,border-color .18s,color .18s;
+}
+.show-all:hover{background:rgba(255,255,255,.06);border-color:var(--border-strong);color:var(--ink)}
+.show-all:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .livestats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
 .livestat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
 .livestat .k{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
@@ -284,6 +317,13 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   header{gap:10px}
   .brand h1{font-size:1.05rem}
   th,td{padding:11px 8px;font-size:.82rem}
+  /* Equal thirds of the available width, with the labels allowed to wrap inside their
+     own cell. This is what keeps all three tabs on screen and tappable down to 320px. */
+  .account-tabs{display:grid;grid-template-columns:repeat(3,1fr);width:100%;border-radius:16px}
+  .account-tabs .tab{
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    padding:9px 6px;font-size:.74rem;white-space:normal;line-height:1.25;border-radius:12px;
+  }
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}
@@ -346,7 +386,10 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   <section class="card">
     <div class="section-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
       <div>
-        <h2>Growth of $10,000</h2>
+        <div class="curve-title">
+          <h2 id="curve-title">Growth of $10,000</h2>
+          <span class="scale-badge" id="scale-badge" hidden></span>
+        </div>
         <p id="curve-sub">—</p>
       </div>
       <div class="chart-tools">
@@ -410,13 +453,13 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <p id="hold-sub">—</p>
     </div>
     <div class="livestats">
-      <div class="livestat"><div class="k">Net Asset Value</div><div class="v num" id="l-nav">—</div></div>
+      <div class="livestat"><div class="k" id="l-nav-k">Net Asset Value</div><div class="v num" id="l-nav">—</div></div>
       <div class="livestat"><div class="k">Since Inception</div><div class="v num" id="l-ret">—</div></div>
       <div class="livestat"><div class="k">Days Live</div><div class="v num" id="l-days">—</div></div>
     </div>
     <div id="holdings"></div>
-    <p class="disclaimer">Actual current positions may differ. Reporting lag applied per standard
-      institutional practice.</p>
+    <p class="disclaimer" id="hold-disclaimer">Actual current positions may differ. Reporting lag
+      applied per standard institutional practice.</p>
   </section>
 
   <section>
@@ -469,7 +512,22 @@ const GRID = 'rgba(255,255,255,0.06)';
 const pct = (v, dp = 2) => (v * 100).toFixed(dp) + '%';
 const signedPct = (v, dp = 2) => (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%';
 const money = v => '$' + Math.round(v).toLocaleString('en-US');
+/* Axis ticks only. The institutional tabs put eight-figure numbers on the y-axis, and a
+   column of "$80,000,000" crowds the plot area; the tooltip still prints exact dollars.
+   Below $1M this is a no-op, so the small account's axis is unchanged. */
+const moneyTick = v => {
+  const a = Math.abs(v);
+  if (a >= 1e9) return '$' + +(v / 1e9).toFixed(1) + 'B';
+  if (a >= 1e6) return '$' + +(v / 1e6).toFixed(1) + 'M';
+  return money(v);
+};
 const money2 = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+/* Holdings rows are built with innerHTML, and company names arrive from the research
+   pipeline -- one ampersand or quote in a name would otherwise break the markup it is
+   interpolated into (p.name lands inside a title="..." attribute). */
+const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ESCAPES[c]);
 
 function tradingDaysSince(iso) {
   const then = new Date(iso + 'T00:00:00Z');
@@ -593,7 +651,8 @@ function renderHeadline(s) {
     `Month-end sampled · ${pct(h.max_drawdown_daily, 1)} on daily marks`;
 
   const bps = h.excess_vs_spy_bps;
-  document.getElementById('k-edge').textContent = (bps >= 0 ? '+' : '') + bps + ' bps/yr';
+  document.getElementById('k-edge').innerHTML =
+    `${bps >= 0 ? '+' : ''}${esc(bps)}<span class="unit">bps/yr</span>`;
   document.getElementById('k-edge-foot').textContent =
     `S&P 500 max drawdown ${pct(h.benchmark_max_drawdown, 1)}`;
 
@@ -608,18 +667,22 @@ function renderHeadline(s) {
 
 function renderPill(s) {
   const dot = document.getElementById('dot');
-  const days = tradingDaysSince(s.as_of);
-  const cls = days < 2 ? 'fresh' : days <= 5 ? 'warn' : 'stale';
-  dot.classList.add(cls);
-  dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
+  if (CFG.marked) {
+    dot.classList.add('marked');
+    dot.title = `Marked ${s.as_of} · remarked at each monthly rebalance, not daily`;
+  } else {
+    const days = tradingDaysSince(s.as_of);
+    dot.classList.add(days < 2 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
+    dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
+  }
 
   const live = s.live;
-  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
   if (live && live.nav != null) {
     document.getElementById('pill-nav').textContent =
-      `${money2(live.nav * scale)} · ${signedPct(live.since_inception_return)}`;
-    document.getElementById('pill-sub').textContent =
-      `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
+      `${money2(live.nav * CFG.scale)} · ${signedPct(live.since_inception_return)}`;
+    document.getElementById('pill-sub').textContent = CFG.marked
+      ? `Marked ${s.as_of} · ${live.days_live} day${live.days_live === 1 ? '' : 's'} live`
+      : `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
   } else {
     document.getElementById('pill-nav').textContent = 'Awaiting first mark';
     document.getElementById('pill-sub').textContent = `Data as of ${s.as_of}`;
@@ -627,9 +690,18 @@ function renderPill(s) {
 }
 
 function renderEquity(s) {
-  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
+  const scale = CFG.scale;
+  // Every series goes through this one mapper, so the vs-SPY tooltip below stays a
+  // ratio of two equally scaled numbers. Scaling only one of them would corrupt it.
   const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale}));
   const ec = s.equity_curve;
+
+  document.getElementById('curve-title').textContent = 'Growth of ' + money(CFG.base);
+  if (scale !== 1) {
+    const badge = document.getElementById('scale-badge');
+    badge.textContent = `Simulated · ${scale}× scale`;
+    badge.hidden = false;
+  }
 
   const spy = toXY(ec.spy);
   const spyAt = new Map(spy.map(p => [p.x, p.y]));
@@ -710,7 +782,7 @@ function renderEquity(s) {
           type: 'logarithmic',
           grid: {color: GRID, drawTicks: false},
           border: {display: false},
-          ticks: {callback: v => money(v)}
+          ticks: {callback: v => moneyTick(v)}
         }
       },
       plugins: {
@@ -909,7 +981,8 @@ function renderHoldings(s) {
     `As of ${h.last_rebalance || h.as_of} · T+30 reporting lag · Updated monthly`;
 
   const live = s.live || {};
-  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
+  const scale = CFG.scale;
+  document.getElementById('l-nav-k').textContent = scale === 1 ? 'Net Asset Value' : 'Simulated NAV';
   document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav * scale) : '—';
   const retEl = document.getElementById('l-ret');
   if (live.since_inception_return != null) {
@@ -921,31 +994,77 @@ function renderHoldings(s) {
   document.getElementById('l-days').textContent = live.days_live != null ? live.days_live : '—';
 
   // Colour holdings by sector using the same validated slots as the rotation chart, so a
-  // sector reads as one colour across the whole page.
-  const order = (s.sector_history && s.sector_history.sectors) || [];
+  // sector reads as one colour across the whole page. The rotation chart folds its
+  // smallest sleeves into "Other", so the books legitimately hold sectors it never lists
+  // (Chemicals, Energy, Consumer Durables). Append those in sorted order rather than
+  // dropping them to grey -- it was hitting 10 of 104 production names.
+  const known = (s.sector_history && s.sector_history.sectors) || [];
+  const extra = [...new Set(h.positions.map(p => p.sector))]
+    .filter(name => name && known.indexOf(name) < 0)
+    .sort();
+  const order = known.concat(extra);
   const colorFor = sector => {
     const i = order.indexOf(sector);
     return i >= 0 ? SECTOR_COLORS[i % SECTOR_COLORS.length] : '#8b93a7';
   };
 
+  // Copy before sorting so the snapshot array is never reordered under anything else
+  // reading it. Production is 104 names at one identical weight, so the comparator
+  // returns 0 throughout and the original order survives -- Array#sort has been
+  // required to be stable since ES2019.
+  const sorted = [...h.positions].sort((a, b) => (Number(b.weight) || 0) - (Number(a.weight) || 0));
+  const weights = sorted.map(p => Number(p.weight) || 0);
+  // Guard the divisor: an empty book would otherwise make Math.max return -Infinity and
+  // every bar width NaN.
+  const max = weights.length ? Math.max(...weights) : 0;
+  const denom = max > 0 ? max : 1;
+
   const box = document.getElementById('holdings');
-  box.innerHTML = '';
-  const sortedPositions = [...h.positions].sort((a, b) => b.weight - a.weight);
-  const max = Math.max(...sortedPositions.map(p => p.weight));
-  sortedPositions.forEach(p => {
-    const c = colorFor(p.sector);
-    const row = document.createElement('div');
-    row.className = 'holding';
-    row.innerHTML =
-      `<div class="tkr">${p.ticker}</div>` +
-      `<div class="co" title="${p.name}">${p.name}</div>` +
-      `<div><span class="chip" style="color:${c}">${p.sector}</span></div>` +
-      `<div class="wbar">` +
-        `<span class="track"><span class="fill" style="width:${(p.weight / max) * 100}%;background:${c}"></span></span>` +
-        `<span class="pct">${pct(p.weight, 1)}</span>` +
-      `</div>`;
-    box.appendChild(row);
-  });
+  const COLLAPSED = 25;
+
+  const renderRows = limit => {
+    box.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    sorted.slice(0, limit).forEach(p => {
+      const c = colorFor(p.sector);
+      const w = Number(p.weight) || 0;
+      const row = document.createElement('div');
+      row.className = 'holding';
+      row.innerHTML =
+        `<div class="tkr">${esc(p.ticker)}</div>` +
+        `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
+        `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
+        `<div class="wbar">` +
+          // Floor the fill so a real but tiny weight still reads as a bar. Shadow's
+          // smallest is 0.19% of its largest, which rounds to a sub-pixel sliver.
+          `<span class="track"><span class="fill" style="width:${Math.max((w / denom) * 100, 1.2)}%;background:${c}"></span></span>` +
+          `<span class="pct">${pct(w, w > 0 && w < 0.01 ? 2 : 1)}</span>` +
+        `</div>`;
+      frag.appendChild(row);
+    });
+    box.appendChild(frag);
+  };
+
+  renderRows(COLLAPSED);
+  if (sorted.length > COLLAPSED) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'show-all';
+    more.textContent = `Show all ${sorted.length} holdings`;
+    // renderRows clears the container, which takes the button with it.
+    more.addEventListener('click', () => renderRows(sorted.length), {once: true});
+    box.appendChild(more);
+  }
+
+  const disclaimer = document.getElementById('hold-disclaimer');
+  if (scale !== 1) {
+    disclaimer.textContent =
+      'Actual current positions may differ. Reporting lag applied per standard institutional ' +
+      `practice. This book is simulated as a fractional weight portfolio on a $10,000 base and ` +
+      `shown at ${money(CFG.base)} notional (${scale}×). Every return, Sharpe and drawdown figure ` +
+      'on this page is a ratio of NAV levels and is therefore identical at either size; at this ' +
+      'notional market impact is immaterial, which would not hold for a materially larger book.';
+  }
 }
 
 /* ---------- boot ---------- */
@@ -961,19 +1080,43 @@ function fail(msg) {
    half production's because CDaR sizing is exactly what it exists to test. Never
    copy one file's history into another.
 
-   All three curves are $10,000-based, so no per-account chart scaling is needed
-   -- an earlier version of this page multiplied production by 500, which no
-   longer matches how the snapshots are built. */
+   All three snapshots are built $10,000-based. `scale` restates two of them at an
+   institutional notional and is DISPLAY ONLY -- it is applied uniformly to every
+   series and NAV read from the file, and nothing writes it back.
+
+   Which books may be scaled is not a style choice. Every published statistic --
+   CAGR, Sharpe, drawdown, and the vs-SPY tooltip -- is a ratio of NAV levels, so a
+   constant multiplier cancels exactly and the log axis merely translates. What does
+   not cancel is integer-share rounding: the small account holds whole shares (33 of
+   a $31.70 name), so its weights are lumpy *because* of its size and it cannot be
+   honestly restated at another AUM. It stays at 1x. Production and shadow carry no
+   share or value fields at all -- production is 104 names at one identical weight,
+   shadow is 36 distinct CDaR weights -- so their returns are a fixed sum of
+   w_i * r_i and are exactly scale-free. Hence 500x on those two and nowhere else.
+   The binding limit is capacity, not arithmetic: $5M across 104 mid/large caps is
+   ~$48k a name, where impact is immaterial. This would not hold at $500M.
+
+   `marked` books are remarked by the research pipeline at each monthly rebalance,
+   not by the daily price job -- build_snapshot_cloud.py only ever refreshes
+   portfolio_snapshot.json, and could not price these two anyway because their
+   positions carry no share counts. The page states that rather than flying a
+   staleness warning at a date that is behaving exactly as designed. */
 const ACCOUNTS = {
   '': {
     file: 'portfolio_snapshot.json',
     label: 'Small Account',
+    scale: 1,
+    base: 10000,
+    marked: false,
     note: 'Concentrated 10-stock retail book, sized for a $10,000 account with '
         + 'integer-share execution. History is the Phase 74 two-factor score.'
   },
   production: {
     file: 'production_snapshot.json',
     label: 'Production Model',
+    scale: 500,
+    base: 5000000,
+    marked: true,
     note: 'The 104-stock institutional book — the full top-quintile selection, '
         + 'equal-weighted. History is the Phase 74 two-factor score, the same '
         + 'walk-forward arm the headline figures quote.'
@@ -981,6 +1124,9 @@ const ACCOUNTS = {
   shadow: {
     file: 'shadow_snapshot.json',
     label: 'Shadow Track',
+    scale: 500,
+    base: 5000000,
+    marked: true,
     note: 'Experimental 85-stock book testing CDaR (Conditional Drawdown at Risk) '
         + 'dynamic position sizing. It selects on earnings surprise alone, so the '
         + 'Phase 74 scoring change does not apply to it — its 245-month history is '
@@ -988,6 +1134,11 @@ const ACCOUNTS = {
         + 'The shallower drawdowns are the CDaR sizing this book exists to test.'
   }
 };
+
+/* Resolved once in boot(), then read by the renderers. Deriving the scale per call
+   site instead lets the three copies drift apart, which is how the chart and the
+   header pill end up quoting different notionals. */
+let CFG = ACCOUNTS[''];
 
 function resolveAccount() {
   const requested = new URLSearchParams(window.location.search).get('account');
@@ -1003,21 +1154,26 @@ function renderAccountTabs(account) {
 
 async function boot() {
   const account = resolveAccount();
+  CFG = ACCOUNTS[account];
   renderAccountTabs(account);
 
   let snap;
   try {
-    const res = await fetch('./' + ACCOUNTS[account].file, {cache: 'no-store'});
+    const res = await fetch('./' + CFG.file, {cache: 'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     snap = await res.json();
   } catch (err) {
-    console.error('[dashboard] snapshot fetch failed', ACCOUNTS[account].file, err);
-    fail(`${ACCOUNTS[account].label} data is updating… Please check back shortly.`);
+    console.error('[dashboard] snapshot fetch failed', CFG.file, err);
+    fail(`${CFG.label} data is updating… Please check back shortly.`);
     return;
   }
 
   try {
     applyDefaults();
+    if (CFG.marked) {
+      const note = document.getElementById('model-description');
+      note.textContent += ` Marked ${snap.as_of}; remarked at each monthly rebalance, not daily.`;
+    }
     renderHeadline(snap);
     renderPill(snap);
     renderEquity(snap);
