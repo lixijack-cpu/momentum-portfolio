@@ -1,0 +1,110 @@
+name: Daily Dashboard Update
+
+on:
+  schedule:
+    # GitHub cron is UTC. Run at both possible UTC times, then keep the trigger
+    # matching New York's current offset. This remains correct across EST/EDT
+    # transitions even if GitHub queues the scheduled job.
+    - cron: '30 20 * * 1-5'
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:            # allow manual trigger for testing
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check New York schedule
+        id: schedule
+        run: |
+          offset="$(TZ=America/New_York date +%z)"
+          schedule="${{ github.event.schedule }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" \
+             || "$offset" == "-0400" && "$schedule" == "30 20 * * 1-5" \
+             || "$offset" == "-0500" && "$schedule" == "30 21 * * 1-5" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        if: steps.schedule.outputs.run == 'true'
+        run: pip install pandas yfinance
+
+      # The builder refreshes prices in the checked-out snapshot in place. Every
+      # failure path inside it exits 0 and leaves the file untouched, so a Yahoo
+      # outage simply republishes yesterday's numbers instead of breaking the page.
+      - name: Build updated snapshot
+        if: steps.schedule.outputs.run == 'true'
+        run: python build_snapshot_cloud.py --output portfolio_snapshot.json
+
+      # Defence in depth: never publish a snapshot the dashboard cannot render.
+      # Failing here stops the commit and the deploy, so Pages keeps serving the
+      # last good build.
+      - name: Verify snapshot
+        if: steps.schedule.outputs.run == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("portfolio_snapshot.json"))
+          expected = ["schema_version", "generated_at", "as_of", "headline",
+                      "equity_curve", "live", "crash_table", "sector_history",
+                      "monthly_returns", "holdings", "notes"]
+          assert list(d) == expected, f"top-level keys are {list(d)}"
+          assert d["headline"].get("cagr") and d["headline"].get("sharpe"), "headline is empty"
+          n = len(d["holdings"]["positions"])
+          # The dashboard publishes the small account. Anything near 100 names means
+          # something rebuilt the book from the production allocation again.
+          assert 1 <= n <= 25, f"expected the small account, found {n} holdings"
+          assert len(d["equity_curve"]["backtest"]) > 5000, "backtest curve truncated"
+          assert d["live"]["nav"] > 0, "live NAV is not positive"
+          print(f"ok: {n} holdings, cagr={d['headline']['cagr']}, "
+                f"sharpe={d['headline']['sharpe']}, as_of={d['as_of']}")
+          PY
+
+      - name: Commit and push
+        if: steps.schedule.outputs.run == 'true'
+        run: |
+          git config user.email "lixijack@gmail.com"
+          git config user.name "Jack Power"
+          git add portfolio_snapshot.json
+          git diff --staged --quiet || git commit -m "Auto daily update $(date -u +%Y-%m-%d)"
+          git push
+
+      # Pushes made with GITHUB_TOKEN do not trigger the separate Pages workflow,
+      # so this job deploys the just-built files directly.
+      - name: Set up Pages
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to Pages
+        if: steps.schedule.outputs.run == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4
