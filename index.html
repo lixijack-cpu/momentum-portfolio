@@ -134,6 +134,22 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 }
 .toggle button[aria-pressed="true"]{background:rgba(59,130,246,0.18);color:var(--ink)}
 .toggle button:hover{color:var(--ink)}
+.account-tabs{
+  display:inline-flex;border:1px solid var(--border);border-radius:999px;
+  overflow:hidden;flex-wrap:wrap;margin-bottom:14px;
+}
+.account-tabs .tab{
+  color:var(--muted);text-decoration:none;white-space:nowrap;
+  font:inherit;font-size:.76rem;font-weight:500;padding:6px 15px;
+  transition:background .18s,color .18s;
+}
+.account-tabs .tab:hover{color:var(--ink);background:var(--card-hover)}
+.account-tabs .tab[aria-current="page"]{background:rgba(59,130,246,0.18);color:var(--ink)}
+.account-tabs .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+#model-description{
+  color:var(--muted);font-size:.82rem;line-height:1.6;
+  max-width:80ch;margin-bottom:22px;
+}
 .caption{color:var(--muted);font-size:.76rem;margin-top:12px}
 .scroll-x{overflow-x:auto;overflow-y:hidden;padding-bottom:8px}
 .scroll-x::-webkit-scrollbar{height:8px}
@@ -294,6 +310,13 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 </header>
 
 <main hidden id="main">
+
+  <nav class="account-tabs" aria-label="Portfolio account views">
+    <a href="?account=" class="tab" data-account="">Small Account</a>
+    <a href="?account=production" class="tab" data-account="production">Production Model</a>
+    <a href="?account=shadow" class="tab" data-account="shadow">Shadow Track</a>
+  </nav>
+  <div id="model-description"></div>
 
   <section class="hero">
     <div class="card stat">
@@ -925,15 +948,64 @@ function fail(msg) {
   document.getElementById('state-msg').textContent = msg;
 }
 
+/* ---------- accounts ----------
+   Each book publishes its own snapshot with its own live track AND its own
+   measured history. They are not three views of one backtest: the shadow book
+   runs 245 months against production's 247, and its crash drawdowns are roughly
+   half production's because CDaR sizing is exactly what it exists to test. Never
+   copy one file's history into another.
+
+   All three curves are $10,000-based, so no per-account chart scaling is needed
+   -- an earlier version of this page multiplied production by 500, which no
+   longer matches how the snapshots are built. */
+const ACCOUNTS = {
+  '': {
+    file: 'portfolio_snapshot.json',
+    label: 'Small Account',
+    note: 'Concentrated 10-stock retail book, sized for a $10,000 account with '
+        + 'integer-share execution. History is the Phase 74 two-factor score.'
+  },
+  production: {
+    file: 'production_snapshot.json',
+    label: 'Production Model',
+    note: 'The 104-stock institutional book — the full top-quintile selection, '
+        + 'equal-weighted. History is the Phase 74 two-factor score, the same '
+        + 'walk-forward arm the headline figures quote.'
+  },
+  shadow: {
+    file: 'shadow_snapshot.json',
+    label: 'Shadow Track',
+    note: 'Experimental 85-stock book testing CDaR (Conditional Drawdown at Risk) '
+        + 'dynamic position sizing. Its 245-month history is measured separately '
+        + 'and predates the Phase 74 scoring change, so it is not comparable '
+        + 'like-for-like with the other two tabs.'
+  }
+};
+
+function resolveAccount() {
+  const requested = new URLSearchParams(window.location.search).get('account');
+  return Object.prototype.hasOwnProperty.call(ACCOUNTS, requested) ? requested : '';
+}
+
+function renderAccountTabs(account) {
+  const tab = document.querySelector(`.account-tabs .tab[data-account="${account}"]`);
+  if (tab) tab.setAttribute('aria-current', 'page');
+  const note = document.getElementById('model-description');
+  if (note) note.textContent = ACCOUNTS[account].note;
+}
+
 async function boot() {
+  const account = resolveAccount();
+  renderAccountTabs(account);
+
   let snap;
   try {
-    const res = await fetch('./portfolio_snapshot.json', {cache: 'no-store'});
+    const res = await fetch('./' + ACCOUNTS[account].file, {cache: 'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     snap = await res.json();
   } catch (err) {
-    console.error('[dashboard] snapshot fetch failed', err);
-    fail('Dashboard updating… Please check back shortly.');
+    console.error('[dashboard] snapshot fetch failed', ACCOUNTS[account].file, err);
+    fail(`${ACCOUNTS[account].label} data is updating… Please check back shortly.`);
     return;
   }
 
