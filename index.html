@@ -1175,7 +1175,7 @@ async function boot() {
     applyDefaults();
     if (CFG.marked) {
       const note = document.getElementById('model-description');
-      note.textContent += ` Marked ${snap.as_of}; remarked at each monthly rebalance, not daily.`;
+      note.innerHTML += ` <br><strong style="color: var(--amber); background: rgba(245,158,11,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 8px;">⚠️ Note: The Production and Shadow tracks are massive institutional portfolios that are only updated monthly during the official rebalance (Marked: ${snap.as_of}).</strong>`;
     }
     renderHeadline(snap);
     renderPill(snap);
