@@ -398,11 +398,17 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <details>
       <summary>About This Strategy <span class="caret">▼</span></summary>
       <div class="about-body">
-        <p>A systematic long-only US equity strategy that selects stocks monthly using a proprietary
-        multi-factor ranking model combining fundamental quality and analyst-derived signals.
-        Portfolio construction applies convex drawdown-aware optimization with dynamic regime-based
-        risk management, allowing the strategy to reduce equity exposure during adverse market
-        conditions.</p>
+        <p>A systematic long-only US equity strategy that selects stocks monthly using a two-factor
+        ranking model — earnings surprise (67%) and valuation (33%) — combined at selection with an
+        alternative-data price signal. Portfolio construction applies convex drawdown-aware
+        optimization with dynamic regime-based risk management, allowing the strategy to reduce
+        equity exposure during adverse market conditions.</p>
+        <p>The model deliberately carries fewer factors than it once did. An analyst-revision signal
+        was removed in Aug 2026 after out-of-sample testing showed it did not predict returns, and
+        two further candidate factors (residual momentum and earnings acceleration) were built,
+        measured and rejected on the same evidence. Factors are added here only when they survive
+        that test, and the current two-factor blend has not yet cleared statistical significance
+        against its predecessor either.</p>
         <p>Validated using point-in-time clean data spanning 2005–2026 — no look-ahead bias, no
         survivorship bias. Live paper trading commenced July 2026.</p>
         <p id="about-method"></p>
