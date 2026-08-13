@@ -612,9 +612,10 @@ function renderPill(s) {
   dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
 
   const live = s.live;
+  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
   if (live && live.nav != null) {
     document.getElementById('pill-nav').textContent =
-      `${money2(live.nav)} · ${signedPct(live.since_inception_return)}`;
+      `${money2(live.nav * scale)} · ${signedPct(live.since_inception_return)}`;
     document.getElementById('pill-sub').textContent =
       `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
   } else {
@@ -624,7 +625,8 @@ function renderPill(s) {
 }
 
 function renderEquity(s) {
-  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v}));
+  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
+  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale}));
   const ec = s.equity_curve;
 
   const spy = toXY(ec.spy);
@@ -759,7 +761,7 @@ function renderEquity(s) {
   if (s.live && s.live.rebase_factor > 1) {
     document.getElementById('rebase-note').textContent =
       'The live paper account is rebased to continue the simulated curve so both share one ' +
-      'axis; the account was funded at ' + money(s.live.inception_nav) +
+      'axis; the account was funded at ' + money(s.live.inception_nav * scale) +
       ' and its true value is shown in the header and holdings below.';
   }
 }
@@ -905,7 +907,8 @@ function renderHoldings(s) {
     `As of ${h.last_rebalance || h.as_of} · T+30 reporting lag · Updated monthly`;
 
   const live = s.live || {};
-  document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav) : '—';
+  const scale = (resolveAccount() === 'production' || resolveAccount() === 'shadow') ? 500 : 1;
+  document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav * scale) : '—';
   const retEl = document.getElementById('l-ret');
   if (live.since_inception_return != null) {
     retEl.textContent = signedPct(live.since_inception_return);
