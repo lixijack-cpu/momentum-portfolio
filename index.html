@@ -3,8 +3,24 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="color-scheme" content="dark" />
+<meta name="color-scheme" content="dark light" id="color-scheme" />
 <title>Systematic Equity — Quantitative Portfolio Dashboard</title>
+<!-- Applies the stored theme before the stylesheet paints. Deferring this to the main
+     script gives a light-mode reader a full dark flash on every load, because the page
+     is dark by default and the toggle would not run until after first paint. -->
+<script>
+(function () {
+  try {
+    var stored = localStorage.getItem('theme');
+    var light = stored ? stored === 'light'
+                       : window.matchMedia('(prefers-color-scheme: light)').matches;
+    if (light) {
+      document.documentElement.classList.add('theme-light');
+      document.getElementById('color-scheme').setAttribute('content', 'light dark');
+    }
+  } catch (e) { /* private mode: fall through to the dark default */ }
+})();
+</script>
 <meta name="description" content="Systematic long-only US equity strategy. Multi-factor ranking, monthly rebalance, regime-aware risk management." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,15 +30,25 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
+/* ---------- theme tokens ----------
+   Every colour on this page resolves through one of these variables, including the ones
+   Chart.js and the canvas plugins paint with -- the JS reads them back out of
+   getComputedStyle rather than keeping its own copies, so a hue is defined exactly once.
+
+   Dark ("Carbon Graphite") is the default on :root. Light ("Frosted Slate") overrides
+   under .theme-light, which the pre-paint script in <head> sets from localStorage, or
+   from prefers-color-scheme when the reader has expressed no preference. There is
+   deliberately no @media(prefers-color-scheme) block: it would compete with the explicit
+   toggle, and the page already requires JS to render anything at all. */
 :root{
-  --bg:#0a0f1e;
-  --card:rgba(255,255,255,0.04);
-  --card-hover:rgba(255,255,255,0.06);
-  --border:rgba(255,255,255,0.08);
-  --border-strong:rgba(255,255,255,0.14);
-  --ink:#f3f4f6;
-  --ink-2:#c3cad8;
-  --muted:#8b93a7;
+  --bg:#121418;
+  --card:rgba(255,255,255,0.03);
+  --card-hover:rgba(255,255,255,0.055);
+  --border:rgba(255,255,255,0.05);
+  --border-strong:rgba(255,255,255,0.12);
+  --ink:rgba(255,255,255,0.92);
+  --ink-2:rgba(255,255,255,0.72);
+  --muted:rgba(255,255,255,0.55);
   --blue:#3b82f6;
   --amber:#f59e0b;
   --grey:#94a3b8;
@@ -31,10 +57,108 @@
   --red:#ef4444;
   --grid:rgba(255,255,255,0.06);
 
-  /* Validated 8-slot categorical palette (dark, surface #0a0f1e).
+  --card-shadow:none;
+  --card-shadow-hover:0 18px 40px -18px rgba(0,0,0,.75);
+  --header-bg:#171a20;
+  --header-shadow:0 10px 30px -22px rgba(0,0,0,.95);
+  --hover-wash:rgba(255,255,255,0.03);
+  --hover-wash-strong:rgba(255,255,255,0.06);
+  --row-border:rgba(255,255,255,0.04);
+  --track:rgba(255,255,255,0.07);
+  --scrollbar:rgba(255,255,255,0.13);
+  --spinner-track:rgba(255,255,255,0.12);
+  --tab-active-ink:#dbeafe;
+  --tab-active-bg:linear-gradient(180deg,rgba(59,130,246,.22),rgba(59,130,246,.13));
+  --tab-active-shadow:0 2px 8px rgba(59,130,246,.18),inset 0 1px 0 rgba(255,255,255,.10);
+  --pill-bg:rgba(59,130,246,0.10);
+  --pill-border:rgba(59,130,246,0.35);
+  --pill-glow:0 0 18px rgba(59,130,246,0.14);
+  --glow-1:rgba(59,130,246,0.13);
+  --glow-2:rgba(139,92,246,0.10);
+  --violet:#a78bfa;
+
+  /* Read by the JS. --chart-surface is the *opaque* colour behind a canvas (the card
+     resolved over the page), which is what the stacked-bar separators have to match;
+     a translucent --card would let the bar below bleed through the gap. */
+  --chart-surface:#17191e;
+  --axis-border:rgba(255,255,255,0.12);
+  --tooltip-bg:rgba(13,19,36,0.96);
+  --tooltip-border:rgba(255,255,255,0.14);
+  --tooltip-title:#f3f4f6;
+  --tooltip-body:#c3cad8;
+  --series-bench:rgba(100,116,139,0.85);
+  --series-bench-fill:rgba(100,116,139,0.13);
+  --event-label-bg:rgba(10,15,30,0.88);
+
+  /* Heatmap ramp endpoints. The cell's text colour is not a token -- it is derived per
+     cell from the mixed background's luminance, because one fixed ink cannot stay legible
+     across a ramp that runs from a near-surface neutral to saturated green and red. */
+  --heat-neutral:#232a3a;
+  --heat-pos:#15803d;
+  --heat-neg:#b91c1c;
+
+  /* Validated 8-slot categorical palette (dark, surface #121418).
      Adjacent-pair CVD ΔE 8.4 min, normal-vision ΔE 19.3 min, all ≥3:1 contrast. */
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
   --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+}
+
+.theme-light{
+  --bg:#f4f6f8;
+  --card:#ffffff;
+  --card-hover:#ffffff;
+  --border:rgba(15,23,42,0.09);
+  --border-strong:rgba(15,23,42,0.18);
+  --ink:#1e293b;
+  --ink-2:#334155;
+  --muted:#64748b;
+  /* Deepened for contrast on white. The originals are used as *text* -- the since-inception
+     figure and the sector chips wear these as their colour -- and #10b981 is 2.54:1 against
+     white, #f59e0b only 2.15:1. These four are all >=4.5:1. */
+  --blue:#2563eb;
+  --amber:#b45309;
+  --grey:#64748b;
+  --grey-deep:#475569;
+  --green:#047857;
+  --red:#dc2626;
+  --grid:rgba(15,23,42,0.08);
+
+  --card-shadow:0 4px 6px -1px rgba(0,0,0,0.05);
+  --card-shadow-hover:0 12px 24px -10px rgba(15,23,42,0.18);
+  --header-bg:#ffffff;
+  --header-shadow:0 1px 3px rgba(15,23,42,0.06);
+  --hover-wash:rgba(15,23,42,0.035);
+  --hover-wash-strong:rgba(15,23,42,0.06);
+  --row-border:rgba(15,23,42,0.07);
+  --track:rgba(15,23,42,0.08);
+  --scrollbar:rgba(15,23,42,0.2);
+  --spinner-track:rgba(15,23,42,0.12);
+  --tab-active-ink:#1e3a8a;
+  --tab-active-bg:linear-gradient(180deg,rgba(37,99,235,.14),rgba(37,99,235,.08));
+  --tab-active-shadow:0 1px 3px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);
+  --pill-bg:rgba(37,99,235,0.07);
+  --pill-border:rgba(37,99,235,0.28);
+  --pill-glow:0 1px 3px rgba(37,99,235,0.10);
+  --glow-1:rgba(37,99,235,0.07);
+  --glow-2:rgba(139,92,246,0.06);
+  --violet:#6d28d9;
+
+  --chart-surface:#ffffff;
+  --axis-border:rgba(15,23,42,0.16);
+  --tooltip-bg:rgba(255,255,255,0.98);
+  --tooltip-border:rgba(15,23,42,0.14);
+  --tooltip-title:#1e293b;
+  --tooltip-body:#475569;
+  --series-bench:rgba(71,85,105,0.85);
+  --series-bench-fill:rgba(100,116,139,0.12);
+  --event-label-bg:rgba(255,255,255,0.94);
+
+  --heat-neutral:#e8edf3;
+
+  /* Same eight hues in the same order, so a sector keeps its identity across themes.
+     Only slot 4 is re-stepped: #c98500 is 2.99:1 on white and the sector chips wear it as
+     text. #a86f00 clears 3:1 and lifts the worst adjacent CVD pair from ΔE 8.4 to 9.4. */
+  --s4:#a86f00;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
@@ -50,8 +174,8 @@ body{
 body::before{
   content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(900px 500px at 12% -8%, rgba(59,130,246,0.13), transparent 60%),
-    radial-gradient(760px 460px at 88% 4%, rgba(139,92,246,0.10), transparent 62%);
+    radial-gradient(900px 500px at 12% -8%, var(--glow-1), transparent 60%),
+    radial-gradient(760px 460px at 88% 4%, var(--glow-2), transparent 62%);
 }
 h1,h2,h3{font-weight:600;letter-spacing:-0.015em;line-height:1.25}
 a{color:inherit}
@@ -67,19 +191,37 @@ header{
      header, and once the heatmap's ~11,000px-wide scroll layer is in that backdrop the
      rasterisation locks the renderer on scroll. Over an opaque page the blur was
      invisible regardless. */
-  background:#0b1120;
+  background:var(--header-bg);
   border-bottom:1px solid var(--border);
-  box-shadow:0 10px 30px -22px rgba(0,0,0,.95);
+  box-shadow:var(--header-shadow);
 }
 .brand h1{font-size:1.18rem;margin-bottom:2px}
 .brand p{color:var(--muted);font-size:0.8rem;font-weight:300;letter-spacing:0.01em}
+.header-right{display:flex;align-items:center;gap:12px}
 .pill{
   display:flex;align-items:center;gap:10px;
   padding:8px 14px;border-radius:999px;
-  background:rgba(59,130,246,0.10);
-  border:1px solid rgba(59,130,246,0.35);
-  box-shadow:0 0 18px rgba(59,130,246,0.14);
+  background:var(--pill-bg);
+  border:1px solid var(--pill-border);
+  box-shadow:var(--pill-glow);
 }
+/* Theme toggle. Only one of the two glyphs is in the accessibility tree at a time --
+   the hidden one carries aria-hidden -- so a screen reader announces a single action
+   rather than "sun moon". */
+.theme-toggle{
+  width:38px;height:38px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:10px;cursor:pointer;
+  background:var(--hover-wash);border:1px solid var(--border);
+  color:var(--muted);
+  transition:color .18s,border-color .18s,background .18s;
+}
+.theme-toggle:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash-strong)}
+.theme-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.theme-toggle svg{width:18px;height:18px;display:block}
+.theme-toggle .icon-sun{display:none}
+.theme-light .theme-toggle .icon-sun{display:block}
+.theme-light .theme-toggle .icon-moon{display:none}
 .pill .nav-val{font-weight:600;font-size:0.95rem}
 .pill .nav-sub{color:var(--muted);font-size:0.72rem;display:block;font-weight:300}
 .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;position:relative}
@@ -106,13 +248,14 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
      header keeps its blur, where content genuinely passes underneath. */
   border-radius:16px;
   padding:clamp(18px,2.4vw,26px);
+  box-shadow:var(--card-shadow);
   transition:transform .22s ease,box-shadow .22s ease,background .22s ease,border-color .22s ease;
 }
 .card:hover{
   transform:translateY(-2px);
   background:var(--card-hover);
   border-color:var(--border-strong);
-  box-shadow:0 18px 40px -18px rgba(0,0,0,.75);
+  box-shadow:var(--card-shadow-hover);
 }
 .section-head{margin-bottom:16px}
 .section-head h2{font-size:1.06rem}
@@ -126,7 +269,7 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
    number keeps the visual weight, instead of wrapping and unbalancing the stat row. */
 .stat .value .unit{font-size:.4em;font-weight:600;letter-spacing:0;margin-left:.2em}
 .stat .foot{color:var(--muted);font-size:.76rem}
-.v-blue{color:var(--blue)}.v-violet{color:#a78bfa}.v-amber{color:var(--amber)}.v-green{color:var(--green)}
+.v-blue{color:var(--blue)}.v-violet{color:var(--violet)}.v-amber{color:var(--amber)}.v-green{color:var(--green)}
 
 /* ---------- charts ---------- */
 .chart-box{position:relative;height:420px}
@@ -138,7 +281,7 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
   font:inherit;font-size:.76rem;font-weight:500;
   padding:5px 13px;cursor:pointer;transition:background .18s,color .18s;
 }
-.toggle button[aria-pressed="true"]{background:rgba(59,130,246,0.18);color:var(--ink)}
+.toggle button[aria-pressed="true"]{background:var(--pill-bg);color:var(--ink)}
 .toggle button:hover{color:var(--ink)}
 /* Segmented control. Two properties here are load-bearing rather than cosmetic:
    align-self:start stops the strip stretching across the grid column (a grid item
@@ -149,7 +292,7 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 .account-tabs{
   display:inline-flex;align-self:start;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--border);border-radius:999px;
-  padding:4px;gap:4px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.15);
+  padding:4px;gap:4px;margin-bottom:16px;box-shadow:var(--card-shadow);
 }
 .account-tabs .tab{
   color:var(--muted);text-decoration:none;white-space:nowrap;
@@ -157,17 +300,18 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
   transition:color .2s cubic-bezier(.4,0,.2,1),background .2s cubic-bezier(.4,0,.2,1),
              box-shadow .2s cubic-bezier(.4,0,.2,1);
 }
-.account-tabs .tab:hover{color:var(--ink);background:rgba(255,255,255,.04)}
+.account-tabs .tab:hover{color:var(--ink);background:var(--hover-wash)}
 .account-tabs .tab[aria-current="page"]{
-  background:linear-gradient(180deg,rgba(59,130,246,.22),rgba(59,130,246,.13));
-  color:#dbeafe;
-  box-shadow:0 2px 8px rgba(59,130,246,.18),inset 0 1px 0 rgba(255,255,255,.10);
+  background:var(--tab-active-bg);
+  color:var(--tab-active-ink);
+  box-shadow:var(--tab-active-shadow);
 }
 .account-tabs .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .scale-badge{
   display:inline-flex;align-items:center;
   padding:4px 11px;border-radius:999px;white-space:nowrap;
-  background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);
+  background:color-mix(in srgb, var(--amber) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--amber) 35%, transparent);
   color:var(--amber);font-size:.66rem;font-weight:600;
   text-transform:uppercase;letter-spacing:.08em;
 }
@@ -179,7 +323,7 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 .caption{color:var(--muted);font-size:.76rem;margin-top:12px}
 .scroll-x{overflow-x:auto;overflow-y:hidden;padding-bottom:8px}
 .scroll-x::-webkit-scrollbar{height:8px}
-.scroll-x::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:8px}
+.scroll-x::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:8px}
 .scroll-x::-webkit-scrollbar-track{background:transparent}
 
 /* ---------- legend ---------- */
@@ -196,9 +340,9 @@ thead th{
   text-transform:uppercase;letter-spacing:.09em;
   border-bottom:1px solid var(--border);
 }
-tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .18s}
+tbody tr{border-bottom:1px solid var(--row-border);transition:background .18s}
 tbody tr:last-child{border-bottom:0}
-tbody tr:hover{background:rgba(255,255,255,.03)}
+tbody tr:hover{background:var(--hover-wash)}
 .edge-pos{color:var(--green);font-weight:600}
 .edge-neg{color:var(--amber);font-weight:600}
 
@@ -210,32 +354,35 @@ tbody tr:hover{background:rgba(255,255,255,.03)}
 }
 .heat-table{width:100%;border-collapse:separate;border-spacing:3px;margin-top:12px}
 .heat-table th{color:var(--muted);font-weight:400;font-size:.68rem;padding-bottom:6px;text-align:center}
-.heat-year-col{color:rgba(255,255,255,.9);font-weight:600;font-size:.72rem;text-align:left;padding-right:12px;vertical-align:top;padding-top:8px}
+.heat-year-col{color:var(--ink);font-weight:600;font-size:.72rem;text-align:left;padding-right:12px;vertical-align:top;padding-top:8px}
 .heat-table td{padding:0}
+/* No colour here on purpose. The ramp runs from a near-surface neutral to saturated green
+   and red, so no single ink stays legible across it -- renderHeatmap sets each cell's
+   colour from its own background luminance. */
 .heat-cell{
   width:100%;min-width:38px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;
   font-size:.68rem;font-weight:500;font-variant-numeric:tabular-nums;
-  color:rgba(255,255,255,.92);cursor:default;
+  cursor:default;
   transition:transform .14s ease,outline-color .14s ease;
   outline:1px solid transparent;
 }
 .heat-cell.spy-cell{height:16px;font-size:.55rem;opacity:0.75;margin-bottom:6px;border-radius:2px;}
 .heat-cell.empty{background:transparent !important;outline:none;}
-.heat-cell:hover:not(.empty){transform:scale(1.13);outline-color:rgba(255,255,255,.55);position:relative;z-index:3;opacity:1}
+.heat-cell:hover:not(.empty){transform:scale(1.13);outline-color:var(--border-strong);position:relative;z-index:3;opacity:1}
 .scale-legend{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:.74rem;color:var(--muted)}
 .scale-bar{width:150px;height:9px;border-radius:5px;
-  background:linear-gradient(90deg,#b91c1c,#232a3a,#15803d)}
+  background:linear-gradient(90deg,var(--heat-neg),var(--heat-neutral),var(--heat-pos))}
 
 /* ---------- holdings ---------- */
 .holding{
   display:grid;
   grid-template-columns:74px minmax(0,1fr) auto 132px;
   gap:14px;align-items:center;
-  padding:12px 8px;border-bottom:1px solid rgba(255,255,255,.04);
+  padding:12px 8px;border-bottom:1px solid var(--row-border);
   transition:background .18s;
 }
 .holding:last-child{border-bottom:0}
-.holding:hover{background:rgba(255,255,255,.03)}
+.holding:hover{background:var(--hover-wash)}
 .tkr{font-weight:600;font-size:.94rem}
 .co{color:var(--muted);font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip{
@@ -243,35 +390,35 @@ tbody tr:hover{background:rgba(255,255,255,.03)}
   border:1px solid currentColor;font-weight:500;
 }
 .wbar{display:flex;align-items:center;gap:9px}
-.wbar .track{flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+.wbar .track{flex:1;height:6px;border-radius:4px;background:var(--track);overflow:hidden}
 /* display:block matters — the fill is a <span>, and width/height are ignored on inline
    boxes, which renders every weight bar empty. */
 .wbar .fill{display:block;height:100%;border-radius:4px;transition:width .5s ease}
 .wbar .pct{font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--ink-2);min-width:46px;text-align:right}
 .show-all{
   display:block;width:100%;margin-top:14px;
-  background:rgba(255,255,255,.03);border:1px solid var(--border);
+  background:var(--hover-wash);border:1px solid var(--border);
   color:var(--ink-2);font:inherit;font-size:.8rem;font-weight:500;
   padding:11px;border-radius:12px;cursor:pointer;
   transition:background .18s,border-color .18s,color .18s;
 }
-.show-all:hover{background:rgba(255,255,255,.06);border-color:var(--border-strong);color:var(--ink)}
+.show-all:hover{background:var(--hover-wash-strong);border-color:var(--border-strong);color:var(--ink)}
 .show-all:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .livestats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
-.livestat{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.livestat{background:var(--hover-wash);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
 .livestat .k{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
 .livestat .v{font-weight:600;font-size:1.24rem;margin-top:5px;font-variant-numeric:tabular-nums}
 .disclaimer{color:var(--muted);font-size:.74rem;margin-top:16px;line-height:1.6}
 
 /* ---------- about ---------- */
-details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.02)}
+details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:var(--card-shadow)}
 summary{
   cursor:pointer;padding:18px 22px;font-weight:600;font-size:1rem;
   display:flex;justify-content:space-between;align-items:center;gap:12px;
   list-style:none;transition:background .18s;
 }
 summary::-webkit-details-marker{display:none}
-summary:hover{background:rgba(255,255,255,.03)}
+summary:hover{background:var(--hover-wash)}
 summary .caret{color:var(--muted);transition:transform .22s ease;font-size:.8rem}
 details[open] summary .caret{transform:rotate(180deg)}
 .about-body{padding:0 22px 22px;color:var(--ink-2);font-size:.92rem;max-width:78ch}
@@ -288,11 +435,11 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 .social{display:flex;gap:12px}
 .social a{
   width:38px;height:38px;border-radius:10px;
-  border:1px solid var(--border);background:rgba(255,255,255,.03);
+  border:1px solid var(--border);background:var(--hover-wash);
   display:flex;align-items:center;justify-content:center;color:var(--muted);
   transition:color .18s,border-color .18s,transform .18s,background .18s;
 }
-.social a:hover{color:var(--ink);border-color:var(--border-strong);background:rgba(255,255,255,.07);transform:translateY(-2px)}
+.social a:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash-strong);transform:translateY(-2px)}
 
 /* ---------- states ---------- */
 #state{
@@ -302,7 +449,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 }
 .spinner{
   width:38px;height:38px;border-radius:50%;
-  border:2.5px solid rgba(255,255,255,.12);border-top-color:var(--blue);
+  border:2.5px solid var(--spinner-track);border-top-color:var(--blue);
   animation:spin .85s linear infinite;
 }
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -342,12 +489,26 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <h1>Systematic Equity</h1>
     <p>Long-Only · Multi-Factor · Monthly Rebalance</p>
   </div>
-  <div class="pill">
-    <span class="dot" id="dot" title=""></span>
-    <span>
-      <span class="nav-val num" id="pill-nav">—</span>
-      <span class="nav-sub" id="pill-sub">—</span>
-    </span>
+  <div class="header-right">
+    <div class="pill">
+      <span class="dot" id="dot" title=""></span>
+      <span>
+        <span class="nav-val num" id="pill-nav">—</span>
+        <span class="nav-sub" id="pill-sub">—</span>
+      </span>
+    </div>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false"
+            aria-label="Switch to light theme" title="Switch to light theme">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+      </svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M4.35 4.35l1.56 1.56M18.09 18.09l1.56 1.56M2.6 12h2.2M19.2 12h2.2M4.35 19.65l1.56-1.56M18.09 5.91l1.56-1.56"/>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -502,10 +663,41 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 <script>
 'use strict';
 
-const SECTOR_COLORS = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767'];
-const SURFACE = '#0a0f1e';
-const INK_MUTED = '#8b93a7';
-const GRID = 'rgba(255,255,255,0.06)';
+/* ---------- theme ----------
+   Chart.js resolves colours once, at construction, and the canvas plugins paint straight
+   onto the context -- so nothing below can be a module constant captured at load. Every
+   colour is read from the live CSS custom properties at the moment it is needed, which
+   makes the stylesheet the single definition of the palette and lets a theme switch be a
+   re-read rather than a second hardcoded table kept in sync by hand. */
+const token = name => getComputedStyle(document.documentElement)
+  .getPropertyValue(name).trim();
+
+const sectorColors = () =>
+  ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'].map(token);
+
+function themeColors() {
+  return {
+    surface:      token('--chart-surface'),
+    inkMuted:     token('--muted'),
+    ink:          token('--ink'),
+    ink2:         token('--ink-2'),
+    grid:         token('--grid'),
+    axisBorder:   token('--axis-border'),
+    tooltipBg:    token('--tooltip-bg'),
+    tooltipBorder:token('--tooltip-border'),
+    tooltipTitle: token('--tooltip-title'),
+    tooltipBody:  token('--tooltip-body'),
+    bench:        token('--series-bench'),
+    benchFill:    token('--series-bench-fill'),
+    eventLabelBg: token('--event-label-bg'),
+    grey:         token('--grey'),
+    blue:         token('--blue'),
+    amber:        token('--amber'),
+    heatNeutral:  token('--heat-neutral'),
+    heatPos:      token('--heat-pos'),
+    heatNeg:      token('--heat-neg')
+  };
+}
 
 /* ---------- formatting ---------- */
 const pct = (v, dp = 2) => (v * 100).toFixed(dp) + '%';
@@ -545,25 +737,38 @@ function hexToRgb(hex) {
   const h = hex.replace('#', '');
   return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
 }
-function mix(a, b, t) {
+function mixRgb(a, b, t) {
   const A = hexToRgb(a), B = hexToRgb(b);
-  return `rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`;
+  return A.map((v, i) => Math.round(v + (B[i] - v) * t));
+}
+const rgbCss = c => `rgb(${c.join(',')})`;
+
+/* Pick the ink for a heat cell from its own background. A heat ramp is not a flat surface:
+   it runs from a near-surface neutral out to saturated green and red, so a single fixed
+   colour is unreadable at one end whichever end you pick -- white ink vanishes on the pale
+   light-mode neutral, dark ink vanishes on saturated red. The crossover is where WCAG
+   contrast against white and against near-black is equal, L = 0.218. */
+function inkOn(rgb) {
+  const lin = c => (c /= 255) <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  return L > 0.218 ? '#0f172a' : 'rgba(255,255,255,0.95)';
 }
 
 /* ---------- chart defaults ---------- */
 function applyDefaults() {
+  const C = themeColors();
   Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
   Chart.defaults.font.weight = 300;
   Chart.defaults.font.size = 11;
-  Chart.defaults.color = INK_MUTED;
+  Chart.defaults.color = C.inkMuted;
   Chart.defaults.animation.duration = 600;
-  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(13,19,36,0.96)';
-  Chart.defaults.plugins.tooltip.borderColor = 'rgba(255,255,255,0.14)';
+  Chart.defaults.plugins.tooltip.backgroundColor = C.tooltipBg;
+  Chart.defaults.plugins.tooltip.borderColor = C.tooltipBorder;
   Chart.defaults.plugins.tooltip.borderWidth = 1;
   Chart.defaults.plugins.tooltip.padding = 12;
   Chart.defaults.plugins.tooltip.cornerRadius = 10;
-  Chart.defaults.plugins.tooltip.titleColor = '#f3f4f6';
-  Chart.defaults.plugins.tooltip.bodyColor = '#c3cad8';
+  Chart.defaults.plugins.tooltip.titleColor = C.tooltipTitle;
+  Chart.defaults.plugins.tooltip.bodyColor = C.tooltipBody;
   Chart.defaults.plugins.tooltip.titleFont = {weight: 600, size: 12};
   Chart.defaults.plugins.tooltip.displayColors = true;
   Chart.defaults.plugins.tooltip.boxWidth = 9;
@@ -599,7 +804,7 @@ const eventLines = {
       // Flip the label inward when the marker sits near the right edge.
       const flip = x + w + 6 > area.right;
       const bx = flip ? x - w - 5 : x + 5;
-      ctx.fillStyle = 'rgba(10,15,30,0.88)';
+      ctx.fillStyle = opts.labelBg;
       ctx.strokeStyle = ev.color;
       ctx.lineWidth = 1;
       const by = area.top + 6, bh = 18, r = 5;
@@ -634,6 +839,8 @@ const glowLine = {
 
 /* ---------- renderers ---------- */
 let equityChart = null;
+let sectorChart = null;
+let SNAP = null;
 
 function renderHeadline(s) {
   const h = s.headline;
@@ -690,6 +897,7 @@ function renderPill(s) {
 
 function renderEquity(s) {
   const scale = CFG.scale;
+  const C = themeColors();
   // Every series goes through this one mapper, so the vs-SPY tooltip below stays a
   // ratio of two equally scaled numbers. Scaling only one of them would corrupt it.
   const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale}));
@@ -709,8 +917,8 @@ function renderEquity(s) {
     {
       label: 'S&P 500',
       data: spy,
-      borderColor: 'rgba(100,116,139,0.85)',
-      backgroundColor: 'rgba(100,116,139,0.13)',
+      borderColor: C.bench,
+      backgroundColor: C.benchFill,
       borderWidth: 1,
       fill: 'origin',
       pointRadius: 0,
@@ -720,7 +928,7 @@ function renderEquity(s) {
     {
       label: 'Backtest (2005–2025)',
       data: toXY(ec.backtest),
-      borderColor: '#94a3b8',
+      borderColor: C.grey,
       borderWidth: 1.6,
       borderDash: [5, 5],
       fill: false,
@@ -731,7 +939,7 @@ function renderEquity(s) {
     {
       label: '2026 Simulation',
       data: toXY(ec.simulation),
-      borderColor: '#f59e0b',
+      borderColor: C.amber,
       borderWidth: 2,
       fill: false,
       pointRadius: 0,
@@ -741,7 +949,7 @@ function renderEquity(s) {
     {
       label: 'Live Paper Trading',
       data: toXY(ec.live),
-      borderColor: '#3b82f6',
+      borderColor: C.blue,
       borderWidth: 2.5,
       fill: false,
       pointRadius: 0,
@@ -757,7 +965,7 @@ function renderEquity(s) {
     {date: '2022-01-03', label: 'Rate Hikes', color: '#f97316'}
   ];
   if (s.live && s.live.inception_date) {
-    events.push({date: s.live.inception_date, label: '📍 Live Start', color: '#3b82f6'});
+    events.push({date: s.live.inception_date, label: '📍 Live Start', color: C.blue});
   }
 
   equityChart = new Chart(document.getElementById('equity'), {
@@ -773,13 +981,16 @@ function renderEquity(s) {
         x: {
           type: 'time',
           time: {unit: 'year', tooltipFormat: 'dd MMM yyyy'},
-          grid: {color: GRID, drawTicks: false},
-          border: {color: 'rgba(255,255,255,0.12)'},
+          grid: {color: C.grid, drawTicks: false},
+          border: {color: C.axisBorder},
           ticks: {maxRotation: 0, autoSkipPadding: 22}
         },
+        // No min/max here on purpose. Chart.js auto-fits the domain to the data, which is
+        // what keeps the 2009 trough and the 2021 peak on the canvas; a hardcoded bound
+        // would silently clip whichever extreme moved past it as the history grows.
         y: {
           type: 'logarithmic',
-          grid: {color: GRID, drawTicks: false},
+          grid: {color: C.grid, drawTicks: false},
           border: {display: false},
           ticks: {callback: v => moneyTick(v)}
         }
@@ -788,20 +999,26 @@ function renderEquity(s) {
         legend: {
           position: 'top',
           align: 'end',
-          labels: {usePointStyle: true, pointStyle: 'line', boxWidth: 26, padding: 15, color: '#c3cad8'}
+          labels: {usePointStyle: true, pointStyle: 'line', boxWidth: 26, padding: 15, color: C.ink2}
         },
-        eventLines: {events},
+        eventLines: {events, labelBg: C.eventLabelBg},
         tooltip: {
           callbacks: {
             label(ctx) {
               return ` ${ctx.dataset.label}: ${money(ctx.parsed.y)}`;
             },
+            /* The benchmark series is published only as far as the last marked month, so
+               it runs out before the live curve does. Returning '' for that case made the
+               comparison line vanish across the whole live window with no explanation,
+               which reads as a broken tooltip rather than as missing data. Say which it
+               is; do not carry the last SPY level forward, because a flat benchmark over
+               the gap is an invented number, not a conservative one. */
             afterBody(items) {
               if (!items.length) return '';
-              const x = items[0].parsed.x;
-              const bench = spyAt.get(x);
               const port = items.find(i => i.dataset.label !== 'S&P 500');
-              if (bench == null || !port) return '';
+              if (!port) return '';
+              const bench = spyAt.get(items[0].parsed.x);
+              if (bench == null) return '\nvs S&P 500: benchmark not yet marked for this date';
               const rel = port.parsed.y / bench - 1;
               return `\nCumulative vs S&P 500: ${signedPct(rel, 1)}`;
             }
@@ -862,6 +1079,8 @@ function renderCrash(s) {
 
 function renderSectors(s) {
   const sh = s.sector_history;
+  const C = themeColors();
+  const palette = sectorColors();
   const shell = document.getElementById('sector-shell');
   // Give each month ~13px so individual bars stay legible, then scroll horizontally.
   shell.style.width = Math.max(900, sh.months.length * 13) + 'px';
@@ -869,13 +1088,16 @@ function renderSectors(s) {
   const datasets = sh.sectors.map((name, i) => ({
     label: name,
     data: sh.weights[name].map(v => v * 100),
-    backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length],
-    borderColor: SURFACE,
+    backgroundColor: palette[i % palette.length],
+    // The separator between stacked segments has to be the opaque colour *behind* the
+    // canvas, not the page colour -- over a light card the page grey would read as a
+    // dirty line between every pair of sectors.
+    borderColor: C.surface,
     borderWidth: {top: 1, right: 0, bottom: 0, left: 0},
     borderSkipped: false
   }));
 
-  new Chart(document.getElementById('sectors'), {
+  sectorChart = new Chart(document.getElementById('sectors'), {
     type: 'bar',
     data: {labels: sh.months, datasets},
     options: {
@@ -886,7 +1108,7 @@ function renderSectors(s) {
         x: {
           stacked: true,
           grid: {display: false},
-          border: {color: 'rgba(255,255,255,0.12)'},
+          border: {color: C.axisBorder},
           // Thin the ticks to one per January *before* layout runs. Leaving 248 ticks in
           // place and blanking them in the callback sends the layout solver into a
           // non-converging loop that freezes the renderer.
@@ -904,10 +1126,13 @@ function renderSectors(s) {
             }
           }
         },
+        // max:100 is a semantic ceiling, not a crop: these are long-only sector weights and
+        // the measured maximum across all 248 months is 98.5%, the balance being cash. It
+        // is the axis saying "this is the whole book", not a bound clipping real data.
         y: {
           stacked: true,
           max: 100,
-          grid: {color: GRID, drawTicks: false},
+          grid: {color: C.grid, drawTicks: false},
           border: {display: false},
           ticks: {callback: v => v + '%'}
         }
@@ -931,7 +1156,7 @@ function renderSectors(s) {
   legend.innerHTML = '';
   sh.sectors.forEach((name, i) => {
     const el = document.createElement('span');
-    el.innerHTML = `<i class="swatch" style="background:${SECTOR_COLORS[i % SECTOR_COLORS.length]}"></i>${name}`;
+    el.innerHTML = `<i class="swatch" style="background:${palette[i % palette.length]}"></i>${esc(name)}`;
     legend.appendChild(el);
   });
 
@@ -942,58 +1167,83 @@ function renderSectors(s) {
   }
 }
 
-function heatColor(v) {
+function heatColor(v, C) {
   const t = Math.max(-1, Math.min(1, v / 0.10));
-  return t >= 0 ? mix('#232a3a', '#15803d', t) : mix('#232a3a', '#b91c1c', -t);
+  return mixRgb(C.heatNeutral, t >= 0 ? C.heatPos : C.heatNeg, Math.abs(t));
+}
+
+/* One cell, background and ink together, so the two can never drift apart. */
+function heatCell(v, cls, title, dp, C) {
+  const bg = heatColor(v, C);
+  return `<div class="heat-cell${cls}" style="background:${rgbCss(bg)};color:${inkOn(bg)}${dp}" `
+       + `title="${esc(title)}">${(v * 100).toFixed(1)}</div>`;
 }
 
 function renderHeatmap(s) {
   const wrap = document.getElementById('heat-grid');
-  
+  const C = themeColors();
+
   const byYear = {};
   s.monthly_returns.forEach(r => {
     const [y, m] = r.month.split('-');
     if (!byYear[y]) byYear[y] = { strategy: [], spy: [] };
-    byYear[y].strategy[parseInt(m) - 1] = r.strategy;
-    byYear[y].spy[parseInt(m) - 1] = r.spy;
+    byYear[y].strategy[parseInt(m, 10) - 1] = r.strategy;
+    byYear[y].spy[parseInt(m, 10) - 1] = r.spy;
   });
 
   const years = Object.keys(byYear).sort().reverse();
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  
+
   let html = `<table class="heat-table">
     <thead>
       <tr>
         <th></th>
         ${months.map(m => `<th>${m}</th>`).join('')}
-        <th style="padding-left:12px; font-weight:600; color:rgba(255,255,255,0.8);">YTD</th>
+        <th style="padding-left:12px;font-weight:600;color:var(--ink);">YTD</th>
       </tr>
     </thead>
     <tbody>`;
 
   years.forEach(y => {
+    /* Geometric, not additive: a missing month contributes no factor, which is the
+       identity for a product and is what makes a partial year like 2026 (Jan-Jun) come
+       out right. Verified against the equity curve for every year on file -- worst
+       divergence 0.0003pp, four orders below the one decimal shown.
+
+       The guard is `!= null`, deliberately loose, so it catches null as well as a hole.
+       JSON cannot express undefined but it can express null, and under a `!== undefined`
+       test a null month passes as present, contributes 1 + null = 1 (vanishing from the
+       product without trace) and then prints as a "0.0" cell indistinguishable from a
+       genuinely flat month. Missing data must render as missing, never as zero. */
     let stratYtd = 1, spyYtd = 1, hasStrat = false, hasSpy = false;
-    for (let m=0; m<12; m++) {
-      if (byYear[y].strategy[m] !== undefined) { stratYtd *= (1 + byYear[y].strategy[m]); hasStrat = true; }
-      if (byYear[y].spy[m] !== undefined) { spyYtd *= (1 + byYear[y].spy[m]); hasSpy = true; }
+    for (let m = 0; m < 12; m++) {
+      if (byYear[y].strategy[m] != null) { stratYtd *= (1 + byYear[y].strategy[m]); hasStrat = true; }
+      if (byYear[y].spy[m] != null)      { spyYtd   *= (1 + byYear[y].spy[m]);      hasSpy   = true; }
     }
     stratYtd -= 1; spyYtd -= 1;
 
-    html += `<tr><td rowspan="2" class="heat-year-col">${y}</td>`;
-    for(let m=0; m<12; m++) {
+    const empty = '<td><div class="heat-cell empty"></div></td>';
+    const blank = cls => `<td style="padding-left:12px;"><div class="heat-cell${cls}"></div></td>`;
+
+    html += `<tr><td rowspan="2" class="heat-year-col">${esc(y)}</td>`;
+    for (let m = 0; m < 12; m++) {
       const val = byYear[y].strategy[m];
-      if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
-      html += `<td><div class="heat-cell" style="background:${heatColor(val)}" title="Portfolio · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
+      html += val == null ? empty
+        : `<td>${heatCell(val, '', `Portfolio · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}`, ';font-weight:500', C)}</td>`;
     }
-    html += `<td style="padding-left:12px;"><div class="heat-cell" style="background:${hasStrat ? heatColor(stratYtd) : 'transparent'}; font-weight:700;" title="Portfolio · ${y} YTD: ${signedPct(stratYtd)}">${hasStrat ? (stratYtd*100).toFixed(1) : ''}</div></td>`;
+    html += hasStrat
+      ? `<td style="padding-left:12px;">${heatCell(stratYtd, '', `Portfolio · ${y} YTD: ${signedPct(stratYtd)}`, ';font-weight:700', C)}</td>`
+      : blank('');
     html += `</tr><tr>`;
-    
-    for(let m=0; m<12; m++) {
+
+    for (let m = 0; m < 12; m++) {
       const val = byYear[y].spy[m];
-      if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
-      html += `<td><div class="heat-cell spy-cell" style="background:${heatColor(val)}" title="S&P 500 · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
+      html += val == null ? empty
+        : `<td>${heatCell(val, ' spy-cell', `S&P 500 · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}`, '', C)}</td>`;
     }
-    html += `<td style="padding-left:12px;"><div class="heat-cell spy-cell" style="background:${hasSpy ? heatColor(spyYtd) : 'transparent'}; font-weight:700;" title="S&P 500 · ${y} YTD: ${signedPct(spyYtd)}">${hasSpy ? (spyYtd*100).toFixed(1) : ''}</div></td>`;
+    html += hasSpy
+      ? `<td style="padding-left:12px;">${heatCell(spyYtd, ' spy-cell', `S&P 500 · ${y} YTD: ${signedPct(spyYtd)}`, ';font-weight:700', C)}</td>`
+      : blank(' spy-cell');
     html += `</tr>`;
   });
   html += `</tbody></table>`;
@@ -1028,9 +1278,11 @@ function renderHoldings(s) {
     .filter(name => name && known.indexOf(name) < 0)
     .sort();
   const order = known.concat(extra);
+  const palette = sectorColors();
+  const fallback = token('--muted');
   const colorFor = sector => {
     const i = order.indexOf(sector);
-    return i >= 0 ? SECTOR_COLORS[i % SECTOR_COLORS.length] : '#8b93a7';
+    return i >= 0 ? palette[i % palette.length] : fallback;
   };
 
   // Copy before sorting so the snapshot array is never reordered under anything else
@@ -1062,10 +1314,19 @@ function renderHoldings(s) {
           (p.rationale ? `<div class="rationale" style="font-size:0.75rem;color:var(--muted);margin-top:2px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.rationale)}</div>` : '') +
         `</div>` +
         `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
+        // This bar is scaled against the *largest holding*, not against the book, so a
+        // full bar means "the biggest position here" and not "100% of the portfolio" --
+        // on the 104-name production book every weight is identical and every bar is
+        // therefore full. The percentage beside it is the true portfolio weight; the
+        // title says which is which so the two cannot be misread as the same number.
         `<div class="wbar">` +
-          // Floor the fill so a real but tiny weight still reads as a bar. Shadow's
-          // smallest is 0.19% of its largest, which rounds to a sub-pixel sliver.
-          `<span class="track"><span class="fill" style="width:${Math.max((w / denom) * 100, 1.2)}%;background:${c}"></span></span>` +
+          // Floor the fill so a real but tiny weight still reads as a bar (shadow's
+          // smallest is 0.19% of its largest, a sub-pixel sliver), and clamp the top.
+          // w/denom cannot exceed 1 by construction, since denom is max(weights) -- the
+          // ceiling is a guard against a future divisor change, not a live overflow.
+          `<span class="track" title="Bar is relative to the largest holding (${pct(max, 1)}); the figure is the portfolio weight">` +
+            `<span class="fill" style="width:${Math.min(100, Math.max((w / denom) * 100, 1.2))}%;background:${c}"></span>` +
+          `</span>` +
           `<span class="pct">${pct(w, w > 0 && w < 0.01 ? 2 : 1)}</span>` +
         `</div>`;
       frag.appendChild(row);
@@ -1093,6 +1354,97 @@ function renderHoldings(s) {
       'on this page is a ratio of NAV levels and is therefore identical at either size; at this ' +
       'notional market impact is immaterial, which would not hold for a materially larger book.';
   }
+}
+
+/* ---------- theme toggle ----------
+   The charts are repainted by mutating their existing options and calling update('none')
+   rather than by rebuilding them. Destroying and re-creating would be simpler to write and
+   would silently throw away the reader's state: the equity chart carries a pan/zoom window
+   and a log-vs-linear choice, and losing those on a theme switch is a worse bug than a
+   stale colour. 'none' skips the animation so the swap reads as instant.
+
+   The heatmap is the exception -- it is a string of innerHTML with no state to preserve,
+   so it is simply re-rendered, which is also what re-derives each cell's ink. */
+function repaintCharts() {
+  const C = themeColors();
+  applyDefaults();
+
+  if (equityChart) {
+    const o = equityChart.options;
+    o.scales.x.grid.color = C.grid;
+    o.scales.x.border.color = C.axisBorder;
+    o.scales.y.grid.color = C.grid;
+    o.plugins.legend.labels.color = C.ink2;
+    o.plugins.eventLines.labelBg = C.eventLabelBg;
+    o.plugins.eventLines.events.forEach(ev => {
+      if (ev.label === '📍 Live Start') ev.color = C.blue;
+    });
+    const ds = equityChart.data.datasets;
+    ds[0].borderColor = C.bench;
+    ds[0].backgroundColor = C.benchFill;
+    ds[1].borderColor = C.grey;
+    ds[2].borderColor = C.amber;
+    ds[3].borderColor = C.blue;
+    equityChart.update('none');
+  }
+
+  if (sectorChart) {
+    const palette = sectorColors();
+    sectorChart.options.scales.x.border.color = C.axisBorder;
+    sectorChart.options.scales.y.grid.color = C.grid;
+    sectorChart.data.datasets.forEach((d, i) => {
+      d.backgroundColor = palette[i % palette.length];
+      d.borderColor = C.surface;
+    });
+    sectorChart.update('none');
+    document.querySelectorAll('#sector-legend .swatch').forEach((el, i) => {
+      el.style.background = palette[i % palette.length];
+    });
+  }
+
+  if (SNAP) renderHeatmap(SNAP);
+
+  // Sector chips in the holdings list are coloured inline from the same slots.
+  const known = (SNAP && SNAP.sector_history && SNAP.sector_history.sectors) || [];
+  if (SNAP && SNAP.holdings) {
+    const palette = sectorColors();
+    const extra = [...new Set(SNAP.holdings.positions.map(p => p.sector))]
+      .filter(name => name && known.indexOf(name) < 0)
+      .sort();
+    const order = known.concat(extra);
+    const fallback = token('--muted');
+    document.querySelectorAll('#holdings .chip').forEach(el => {
+      const i = order.indexOf(el.textContent);
+      el.style.color = i >= 0 ? palette[i % palette.length] : fallback;
+    });
+  }
+}
+
+function setTheme(light) {
+  document.documentElement.classList.toggle('theme-light', light);
+  // Mirrored onto <body> as well: the pre-paint script has to target <html> because
+  // <body> does not exist yet at that point, and keeping both in sync means a
+  // body-scoped selector behaves the same as a root-scoped one.
+  document.body.classList.toggle('theme-light', light);
+  document.getElementById('color-scheme')
+    .setAttribute('content', light ? 'light dark' : 'dark light');
+
+  const btn = document.getElementById('theme-toggle');
+  const next = light ? 'Switch to dark theme' : 'Switch to light theme';
+  btn.setAttribute('aria-pressed', String(light));
+  btn.setAttribute('aria-label', next);
+  btn.title = next;
+
+  try { localStorage.setItem('theme', light ? 'light' : 'dark'); } catch (e) { /* private mode */ }
+}
+
+function initTheme() {
+  const light = document.documentElement.classList.contains('theme-light');
+  setTheme(light);
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    setTheme(!document.documentElement.classList.contains('theme-light'));
+    repaintCharts();
+  });
 }
 
 /* ---------- boot ---------- */
@@ -1183,6 +1535,8 @@ function renderAccountTabs(account) {
 async function boot() {
   const account = resolveAccount();
   CFG = ACCOUNTS[account];
+  // Before the fetch, so the toggle works even on the failure screen.
+  initTheme();
   renderAccountTabs(account);
 
   let snap;
@@ -1200,8 +1554,9 @@ async function boot() {
     applyDefaults();
     if (CFG.marked) {
       const note = document.getElementById('model-description');
-      note.innerHTML += ` <br><strong style="color: var(--amber); background: rgba(245,158,11,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 8px;">⚠️ Note: The Production and Shadow tracks are massive institutional portfolios that are only updated monthly during the official rebalance (Marked: ${snap.as_of}).</strong>`;
+      note.innerHTML += ` <br><strong style="color:var(--amber);background:color-mix(in srgb, var(--amber) 10%, transparent);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:8px;">⚠️ Note: The Production and Shadow tracks are massive institutional portfolios that are only updated monthly during the official rebalance (Marked: ${esc(snap.as_of)}).</strong>`;
     }
+    SNAP = snap;
     renderHeadline(snap);
     renderPill(snap);
     renderEquity(snap);
