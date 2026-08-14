@@ -966,23 +966,34 @@ function renderHeatmap(s) {
       <tr>
         <th></th>
         ${months.map(m => `<th>${m}</th>`).join('')}
+        <th style="padding-left:12px; font-weight:600; color:rgba(255,255,255,0.8);">YTD</th>
       </tr>
     </thead>
     <tbody>`;
 
   years.forEach(y => {
+    let stratYtd = 1, spyYtd = 1, hasStrat = false, hasSpy = false;
+    for (let m=0; m<12; m++) {
+      if (byYear[y].strategy[m] !== undefined) { stratYtd *= (1 + byYear[y].strategy[m]); hasStrat = true; }
+      if (byYear[y].spy[m] !== undefined) { spyYtd *= (1 + byYear[y].spy[m]); hasSpy = true; }
+    }
+    stratYtd -= 1; spyYtd -= 1;
+
     html += `<tr><td rowspan="2" class="heat-year-col">${y}</td>`;
     for(let m=0; m<12; m++) {
       const val = byYear[y].strategy[m];
       if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
       html += `<td><div class="heat-cell" style="background:${heatColor(val)}" title="Portfolio · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
     }
+    html += `<td style="padding-left:12px;"><div class="heat-cell" style="background:${hasStrat ? heatColor(stratYtd) : 'transparent'}; font-weight:700;" title="Portfolio · ${y} YTD: ${signedPct(stratYtd)}">${hasStrat ? (stratYtd*100).toFixed(1) : ''}</div></td>`;
     html += `</tr><tr>`;
+    
     for(let m=0; m<12; m++) {
       const val = byYear[y].spy[m];
       if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
       html += `<td><div class="heat-cell spy-cell" style="background:${heatColor(val)}" title="S&P 500 · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
     }
+    html += `<td style="padding-left:12px;"><div class="heat-cell spy-cell" style="background:${hasSpy ? heatColor(spyYtd) : 'transparent'}; font-weight:700;" title="S&P 500 · ${y} YTD: ${signedPct(spyYtd)}">${hasSpy ? (spyYtd*100).toFixed(1) : ''}</div></td>`;
     html += `</tr>`;
   });
   html += `</tbody></table>`;
