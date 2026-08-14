@@ -208,20 +208,20 @@ tbody tr:hover{background:rgba(255,255,255,.03)}
   display:grid;grid-template-rows:18px 34px 34px;gap:3px;
   flex:0 0 auto;padding-top:0;
 }
-.heat-rowlabels span{
-  display:flex;align-items:center;font-size:.72rem;color:var(--muted);
-  white-space:nowrap;padding-right:4px;
-}
-.heat-track{display:grid;grid-auto-flow:column;grid-template-rows:18px 34px 34px;gap:3px}
-.heat-year{font-size:.68rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.heat-table{width:100%;border-collapse:separate;border-spacing:3px;margin-top:12px}
+.heat-table th{color:var(--muted);font-weight:400;font-size:.68rem;padding-bottom:6px;text-align:center}
+.heat-year-col{color:rgba(255,255,255,.9);font-weight:600;font-size:.72rem;text-align:left;padding-right:12px;vertical-align:top;padding-top:8px}
+.heat-table td{padding:0}
 .heat-cell{
-  width:46px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+  width:100%;min-width:38px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;
   font-size:.68rem;font-weight:500;font-variant-numeric:tabular-nums;
   color:rgba(255,255,255,.92);cursor:default;
   transition:transform .14s ease,outline-color .14s ease;
   outline:1px solid transparent;
 }
-.heat-cell:hover{transform:scale(1.13);outline-color:rgba(255,255,255,.55);position:relative;z-index:3}
+.heat-cell.spy-cell{height:16px;font-size:.55rem;opacity:0.75;margin-bottom:6px;border-radius:2px;}
+.heat-cell.empty{background:transparent !important;outline:none;}
+.heat-cell:hover:not(.empty){transform:scale(1.13);outline-color:rgba(255,255,255,.55);position:relative;z-index:3;opacity:1}
 .scale-legend{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:.74rem;color:var(--muted)}
 .scale-bar{width:150px;height:9px;border-radius:5px;
   background:linear-gradient(90deg,#b91c1c,#232a3a,#15803d)}
@@ -439,8 +439,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
          reinforcement rather than the only channel.</p>
     </div>
     <div class="heat-wrap">
-      <div class="heat-rowlabels"><span></span><span>Portfolio</span><span>S&amp;P 500</span></div>
-      <div class="scroll-x" style="flex:1"><div class="heat-track" id="heat"></div></div>
+      <div class="scroll-x"><div id="heat-grid"></div></div>
     </div>
     <div class="scale-legend">
       <span>≤ −10%</span><span class="scale-bar"></span><span>≥ +10%</span>
@@ -949,30 +948,45 @@ function heatColor(v) {
 }
 
 function renderHeatmap(s) {
-  const track = document.getElementById('heat');
-  track.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  s.monthly_returns.forEach((r, i) => {
-    const [year, mon] = r.month.split('-');
-
-    const tick = document.createElement('div');
-    tick.className = 'heat-year';
-    // Label every January, plus the very first month so the series never opens unlabelled.
-    tick.textContent = (mon === '01' || i === 0) ? year : '';
-    frag.appendChild(tick);
-
-    [['Portfolio', r.strategy], ['S&P 500', r.spy]].forEach(([who, val]) => {
-      const cell = document.createElement('div');
-      cell.className = 'heat-cell';
-      cell.style.background = heatColor(val);
-      cell.textContent = (val * 100).toFixed(1);
-      cell.title = `${who} · ${r.month}: ${signedPct(val)}`;
-      frag.appendChild(cell);
-    });
+  const wrap = document.getElementById('heat-grid');
+  
+  const byYear = {};
+  s.monthly_returns.forEach(r => {
+    const [y, m] = r.month.split('-');
+    if (!byYear[y]) byYear[y] = { strategy: [], spy: [] };
+    byYear[y].strategy[parseInt(m) - 1] = r.strategy;
+    byYear[y].spy[parseInt(m) - 1] = r.spy;
   });
 
-  track.appendChild(frag);
+  const years = Object.keys(byYear).sort().reverse();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  
+  let html = `<table class="heat-table">
+    <thead>
+      <tr>
+        <th></th>
+        ${months.map(m => `<th>${m}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>`;
+
+  years.forEach(y => {
+    html += `<tr><td rowspan="2" class="heat-year-col">${y}</td>`;
+    for(let m=0; m<12; m++) {
+      const val = byYear[y].strategy[m];
+      if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
+      html += `<td><div class="heat-cell" style="background:${heatColor(val)}" title="Portfolio · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
+    }
+    html += `</tr><tr>`;
+    for(let m=0; m<12; m++) {
+      const val = byYear[y].spy[m];
+      if (val === undefined) { html += `<td><div class="heat-cell empty"></div></td>`; continue; }
+      html += `<td><div class="heat-cell spy-cell" style="background:${heatColor(val)}" title="S&P 500 · ${y}-${String(m+1).padStart(2,'0')}: ${signedPct(val)}">${(val*100).toFixed(1)}</div></td>`;
+    }
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
 }
 
 function renderHoldings(s) {
