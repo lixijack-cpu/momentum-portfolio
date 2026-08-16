@@ -283,30 +283,38 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 }
 .toggle button[aria-pressed="true"]{background:var(--pill-bg);color:var(--ink)}
 .toggle button:hover{color:var(--ink)}
-/* Segmented control. Two properties here are load-bearing rather than cosmetic:
-   align-self:start stops the strip stretching across the grid column (a grid item
-   blockifies inline-flex to flex), and flex-wrap is what keeps the last tab reachable
+/* Segmented control, now header-resident and client-side. Two properties here are
+   load-bearing rather than cosmetic: align-self:center keeps the strip from stretching
+   to the header's cross-axis, and flex-wrap is what keeps the last segment reachable
    -- the three labels are ~439px intrinsic against ~339px of usable width at a 375px
    viewport, and body{overflow-x:hidden} clips the overflow rather than scrolling it.
    The narrow breakpoint below switches to equal thirds so it never has to wrap at all. */
 .account-tabs{
-  display:inline-flex;align-self:start;flex-wrap:wrap;
+  display:inline-flex;align-self:center;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--border);border-radius:999px;
-  padding:4px;gap:4px;margin-bottom:16px;box-shadow:var(--card-shadow);
+  padding:4px;gap:4px;box-shadow:var(--card-shadow);
 }
 .account-tabs .tab{
   color:var(--muted);text-decoration:none;white-space:nowrap;
-  font:inherit;font-size:.85rem;font-weight:600;padding:8px 20px;border-radius:999px;
+  background:transparent;border:0;cursor:pointer;
+  font:inherit;font-size:.8rem;font-weight:600;padding:7px 15px;border-radius:999px;
   transition:color .2s cubic-bezier(.4,0,.2,1),background .2s cubic-bezier(.4,0,.2,1),
              box-shadow .2s cubic-bezier(.4,0,.2,1);
 }
+/* The count rides smaller and lighter so the model name keeps the visual weight and the
+   segment stays one line, matching how .stat .value handles its unit. */
+.account-tabs .tab .count{font-size:.86em;font-weight:500;opacity:.72;margin-left:.32em}
 .account-tabs .tab:hover{color:var(--ink);background:var(--hover-wash)}
 .account-tabs .tab[aria-current="page"]{
   background:var(--tab-active-bg);
   color:var(--tab-active-ink);
   box-shadow:var(--tab-active-shadow);
 }
+.account-tabs .tab[aria-current="page"] .count{opacity:.85}
 .account-tabs .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+/* During a swap the strip stays visible and interactive-looking but ignores input, so a
+   double-click cannot start a second fetch while the charts are mid-teardown. */
+.account-tabs[aria-busy="true"]{pointer-events:none;opacity:.62}
 .scale-badge{
   display:inline-flex;align-items:center;
   padding:4px 11px;border-radius:999px;white-space:nowrap;
@@ -464,13 +472,19 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   header{gap:10px}
   .brand h1{font-size:1.05rem}
   th,td{padding:11px 8px;font-size:.82rem}
-  /* Equal thirds of the available width, with the labels allowed to wrap inside their
-     own cell. This is what keeps all three tabs on screen and tappable down to 320px. */
-  .account-tabs{display:grid;grid-template-columns:repeat(3,1fr);width:100%;border-radius:16px}
+  /* The pill drops onto its own full-width row below the brand and NAV pill rather than
+     competing with them for the header's inline axis. Equal thirds with labels allowed to
+     wrap keeps all three segments on screen and tappable down to 320px. */
+  .header-right{flex-wrap:wrap;width:100%;justify-content:flex-end}
+  .account-tabs{
+    display:grid;grid-template-columns:repeat(3,1fr);
+    order:3;width:100%;border-radius:16px;
+  }
   .account-tabs .tab{
     display:flex;align-items:center;justify-content:center;text-align:center;
-    padding:9px 6px;font-size:.74rem;white-space:normal;line-height:1.25;border-radius:12px;
+    padding:9px 6px;font-size:.72rem;white-space:normal;line-height:1.25;border-radius:12px;
   }
+  .account-tabs .tab .count{margin-left:0;display:block;width:100%}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}
@@ -490,6 +504,11 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <p>Long-Only · Multi-Factor · Monthly Rebalance</p>
   </div>
   <div class="header-right">
+    <nav class="account-tabs" id="account-tabs" aria-label="Portfolio model">
+      <button type="button" class="tab" data-account="">Retail<span class="count">10 Stocks</span></button>
+      <button type="button" class="tab" data-account="institutional">Institutional<span class="count">104 Stocks</span></button>
+      <button type="button" class="tab" data-account="shadow">Shadow<span class="count">85 Stocks</span></button>
+    </nav>
     <div class="pill">
       <span class="dot" id="dot" title=""></span>
       <span>
@@ -514,11 +533,6 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 
 <main hidden id="main">
 
-  <nav class="account-tabs" aria-label="Portfolio account views">
-    <a href="?account=" class="tab" data-account="">Small Account</a>
-    <a href="?account=production" class="tab" data-account="production">Production Model</a>
-    <a href="?account=shadow" class="tab" data-account="shadow">Shadow Track</a>
-  </nav>
   <div id="model-description"></div>
 
   <section class="hero">
@@ -1034,12 +1048,27 @@ function renderEquity(s) {
     }
   });
 
-  document.getElementById('equity').addEventListener('dblclick', () => equityChart.resetZoom());
-  document.getElementById('btn-reset').addEventListener('click', () => equityChart.resetZoom());
+  if (s.live && s.live.rebase_factor > 1) {
+    document.getElementById('rebase-note').textContent =
+      'The live paper account is rebased to continue the simulated curve so both share one ' +
+      'axis; the account was funded at ' + money(s.live.inception_nav * scale) +
+      ' and its true value is shown in the header and holdings below.';
+  }
+}
+
+/* Bound once at boot, not per render. These live on DOM nodes that outlive any single
+   chart instance, so registering them inside renderEquity stacked a fresh copy on every
+   model swap and fired the handler N times per click. They reach the chart through the
+   module global, which the rebuild reassigns, so one binding stays correct forever. */
+function initEquityControls() {
+  const resetZoom = () => { if (equityChart) equityChart.resetZoom(); };
+  document.getElementById('equity').addEventListener('dblclick', resetZoom);
+  document.getElementById('btn-reset').addEventListener('click', resetZoom);
 
   const btnLog = document.getElementById('btn-log');
   const btnLin = document.getElementById('btn-lin');
   const setScale = type => {
+    if (!equityChart) return;
     equityChart.options.scales.y.type = type;
     equityChart.update();
     btnLog.setAttribute('aria-pressed', String(type === 'logarithmic'));
@@ -1047,13 +1076,6 @@ function renderEquity(s) {
   };
   btnLog.addEventListener('click', () => setScale('logarithmic'));
   btnLin.addEventListener('click', () => setScale('linear'));
-
-  if (s.live && s.live.rebase_factor > 1) {
-    document.getElementById('rebase-note').textContent =
-      'The live paper account is rebased to continue the simulated curve so both share one ' +
-      'axis; the account was funded at ' + money(s.live.inception_nav * scale) +
-      ' and its true value is shown in the header and holdings below.';
-  }
 }
 
 function renderCrash(s) {
@@ -1484,36 +1506,44 @@ function fail(msg) {
 const ACCOUNTS = {
   '': {
     file: 'portfolio_snapshot.json',
-    label: 'Small Account',
+    label: 'Retail',
     scale: 1,
     base: 10000,
     marked: false,
     note: 'Concentrated 10-stock retail book, sized for a $10,000 account with '
-        + 'integer-share execution. History is the Phase 74 two-factor score.'
+        + 'integer-share execution. Its history is a fixed-book-size variant measured '
+        + 'separately from the institutional arm; that variant did not clear this '
+        + 'project’s significance bar, so the figures below are a candidate result '
+        + 'rather than a certified one.'
   },
-  production: {
-    file: 'production_snapshot.json',
-    label: 'Production Model',
+  institutional: {
+    file: 'institutional_snapshot.json',
+    label: 'Institutional',
     scale: 500,
     base: 5000000,
     marked: true,
     note: 'The 104-stock institutional book — the full top-quintile selection, '
-        + 'equal-weighted. History is the Phase 74 two-factor score, the same '
-        + 'walk-forward arm the headline figures quote.'
+        + 'equal-weighted. History is the Phase 74 two-factor score. Positions are '
+        + 'target weights rather than executed lots, so no share counts are shown.'
   },
   shadow: {
     file: 'shadow_snapshot.json',
-    label: 'Shadow Track',
+    label: 'Shadow',
     scale: 500,
     base: 5000000,
     marked: true,
     note: 'Experimental 85-stock book testing CDaR (Conditional Drawdown at Risk) '
         + 'dynamic position sizing. It selects on earnings surprise alone, so the '
         + 'Phase 74 scoring change does not apply to it — its 245-month history is '
-        + 'measured separately from the other two tabs and is current, not stale. '
+        + 'measured separately from the other two models and is current, not stale. '
         + 'The shallower drawdowns are the CDaR sizing this book exists to test.'
   }
 };
+
+/* The 104-name book was published under ?account=production before it got its own
+   snapshot file. Links to it are in the wild, so the old key resolves to the new one
+   rather than silently falling back to Retail. */
+const ACCOUNT_ALIASES = {production: 'institutional'};
 
 /* Resolved once in boot(), then read by the renderers. Deriving the scale per call
    site instead lets the three copies drift apart, which is how the chart and the
@@ -1522,40 +1552,103 @@ let CFG = ACCOUNTS[''];
 
 function resolveAccount() {
   const requested = new URLSearchParams(window.location.search).get('account');
-  return Object.prototype.hasOwnProperty.call(ACCOUNTS, requested) ? requested : '';
+  const resolved = ACCOUNT_ALIASES[requested] || requested;
+  return Object.prototype.hasOwnProperty.call(ACCOUNTS, resolved) ? resolved : '';
 }
 
 function renderAccountTabs(account) {
-  const tab = document.querySelector(`.account-tabs .tab[data-account="${account}"]`);
-  if (tab) tab.setAttribute('aria-current', 'page');
-  const note = document.getElementById('model-description');
-  if (note) note.textContent = ACCOUNTS[account].note;
+  /* Clear before setting. aria-current is what the active-segment styling keys off, so
+     only adding it would light up every model the visitor has looked at. */
+  document.querySelectorAll('#account-tabs .tab').forEach(tab => {
+    if (tab.dataset.account === account) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
+  });
 }
 
-async function boot() {
-  const account = resolveAccount();
-  CFG = ACCOUNTS[account];
-  // Before the fetch, so the toggle works even on the failure screen.
-  initTheme();
-  renderAccountTabs(account);
+/* Chart.js binds an instance to the canvas element itself, so constructing a second one
+   over a live instance throws "Canvas is already in use" and leaves the old tooltip and
+   hover handlers attached -- which is what ghosts one model's series into the other's. */
+function teardownCharts() {
+  if (equityChart) { equityChart.destroy(); equityChart = null; }
+  if (sectorChart) { sectorChart.destroy(); sectorChart = null; }
+}
+
+/* Notes that a renderer only *replaces* under some condition. hold-disclaimer ships real
+   copy in the markup, so these reset to what the HTML said rather than to empty -- the
+   markup stays the single source of truth for the default wording. */
+const RESETTABLE_NOTES = ['rebase-note', 'sector-note', 'hold-disclaimer', 'crash-note'];
+const NOTE_DEFAULTS = new Map();
+
+function captureNoteDefaults() {
+  RESETTABLE_NOTES.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) NOTE_DEFAULTS.set(id, el.textContent);
+  });
+}
+
+/* Everything the renderers write conditionally, reset to its pre-render state.
+   Each of these is a one-way write -- it sets a value when its condition holds and does
+   nothing when it does not -- which is invisible on a page that only ever renders once
+   and becomes a stale artifact of the previous model the moment we re-render in place. */
+function resetTransientChrome(account) {
+  const dot = document.getElementById('dot');
+  dot.classList.remove('fresh', 'warn', 'stale', 'marked');
+  dot.title = '';
+
+  const badge = document.getElementById('scale-badge');
+  badge.hidden = true;
+  badge.textContent = '';
+
+  NOTE_DEFAULTS.forEach((text, id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  });
+
+  const shell = document.getElementById('sector-shell');
+  if (shell) shell.style.width = '';
+
+  // Assigned, never appended: the marked-book warning below is re-added per render.
+  document.getElementById('model-description').textContent = ACCOUNTS[account].note;
+}
+
+/* The single entry point for putting a model on screen. Used for the first paint and
+   every subsequent toggle, so there is one ordering to reason about rather than two. */
+async function loadModelData(account, {initial = false} = {}) {
+  const tabs = document.getElementById('account-tabs');
+  const previous = CFG;
+  tabs.setAttribute('aria-busy', 'true');
 
   let snap;
   try {
-    const res = await fetch('./' + CFG.file, {cache: 'no-store'});
+    const res = await fetch('./' + ACCOUNTS[account].file, {cache: 'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     snap = await res.json();
   } catch (err) {
-    console.error('[dashboard] snapshot fetch failed', CFG.file, err);
-    fail(`${CFG.label} data is updating… Please check back shortly.`);
-    return;
+    console.error('[dashboard] snapshot fetch failed', ACCOUNTS[account].file, err);
+    tabs.removeAttribute('aria-busy');
+    if (initial) {
+      fail(`${ACCOUNTS[account].label} data is updating… Please check back shortly.`);
+    } else {
+      /* A failed swap leaves the previous model rendered and correct. Roll the
+         selection back to match what is actually on screen rather than stranding the
+         pill on a model the page is not showing. */
+      CFG = previous;
+      renderAccountTabs(resolveAccount());
+    }
+    return false;
   }
 
   try {
-    applyDefaults();
+    CFG = ACCOUNTS[account];
+    teardownCharts();
+    resetTransientChrome(account);
+    renderAccountTabs(account);
+
     if (CFG.marked) {
-      const note = document.getElementById('model-description');
-      note.innerHTML += ` <br><strong style="color:var(--amber);background:color-mix(in srgb, var(--amber) 10%, transparent);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:8px;">⚠️ Note: The Production and Shadow tracks are massive institutional portfolios that are only updated monthly during the official rebalance (Marked: ${esc(snap.as_of)}).</strong>`;
+      document.getElementById('model-description').innerHTML +=
+        ` <br><strong style="color:var(--amber);background:color-mix(in srgb, var(--amber) 10%, transparent);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:8px;">⚠️ Note: The Institutional and Shadow books are large portfolios that are only updated monthly during the official rebalance (Marked: ${esc(snap.as_of)}).</strong>`;
     }
+
     SNAP = snap;
     renderHeadline(snap);
     renderPill(snap);
@@ -1567,8 +1660,37 @@ async function boot() {
   } catch (err) {
     console.error('[dashboard] render failed', err);
     fail('Dashboard updating… Please check back shortly.');
-    return;
+    return false;
+  } finally {
+    tabs.removeAttribute('aria-busy');
   }
+
+  // Keeps the active model linkable and survivable across a refresh, without the full
+  // navigation the old anchor-based tabs cost.
+  const url = account ? `?account=${account}` : window.location.pathname;
+  history.replaceState({account}, '', url);
+  return true;
+}
+
+function initAccountTabs() {
+  document.getElementById('account-tabs').addEventListener('click', event => {
+    const tab = event.target.closest('.tab');
+    if (!tab) return;
+    const account = tab.dataset.account;
+    if (account === resolveAccount()) return;  // Already showing; nothing to swap.
+    loadModelData(account);
+  });
+}
+
+async function boot() {
+  // Before the fetch, so both controls work even on the failure screen.
+  initTheme();
+  initAccountTabs();
+  initEquityControls();
+  captureNoteDefaults();
+  applyDefaults();
+
+  if (!await loadModelData(resolveAccount(), {initial: true})) return;
 
   document.getElementById('state').hidden = true;
   document.getElementById('hdr').hidden = false;
