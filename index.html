@@ -1812,21 +1812,10 @@ function decodeHistory(payload) {
     snapshot: false
   }));
 
-  /* Month-end backtest marks are portfolio-level, not positions: they carry a NAV
-     rather than a share count, and their return spans a month rather than a day. They
-     are labelled SNAPSHOT and leave the size and P&L columns empty rather than filling
-     them with a differently-defined number. */
-  const m = payload.monthly_nav || {dates: [], nav: []};
-  m.dates.forEach((date, i) => {
-    const previous = i ? m.nav[i - 1] : null;
-    const monthLabel = date.slice(0, 7);
-    rows.push({
-      date, ticker: `Month-End NAV (${monthLabel})`, status: 'SNAPSHOT',
-      size: null, price: m.nav[i],
-      ret: previous ? (m.nav[i] / previous - 1) * 100 : null,
-      pnl: null, snapshot: true
-    });
-  });
+  /* Month-end backtest NAV snapshots are omitted from the Trade Journal.
+     The full 20-year NAV history is already shown on the Overview tab's
+     equity curve. This tab only surfaces months where real position-level
+     data (entry/exit/hold) is available from the live ledger. */
 
   rows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
   return {rows, isWeight, book: payload.book || '', notes: payload.notes || ''};
