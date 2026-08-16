@@ -786,7 +786,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
             <tr>
               <th>Date</th><th>Ticker</th><th>Status</th>
               <th id="history-size-head">Shares</th><th>Price</th>
-              <th>Day Return</th><th id="history-pnl-head">Day P&amp;L</th>
+              <th>Day Return</th><th>Hold Days</th><th id="history-pnl-head">Cum. P&amp;L</th>
             </tr>
           </thead>
           <tbody id="history-body"></tbody>
@@ -1817,6 +1817,33 @@ function decodeHistory(payload) {
      equity curve. This tab only surfaces months where real position-level
      data (entry/exit/hold) is available from the live ledger. */
 
+  /* Compute hold days (calendar days since entry) and cumulative P&L per ticker.
+     Both are derived purely from the rows already decoded — no extra fetch needed. */
+  const entryDate = {};
+  const cumPnlMap = {};
+  // Sort ascending to compute running totals forward in time
+  rows.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  rows.forEach(r => {
+    const key = r.ticker;
+    if (r.status === 'IN') {
+      entryDate[key] = r.date;
+      cumPnlMap[key] = 0;
+    }
+    if (entryDate[key]) {
+      const msPerDay = 86400000;
+      r.holdDays = Math.round((new Date(r.date) - new Date(entryDate[key])) / msPerDay);
+      cumPnlMap[key] = (cumPnlMap[key] || 0) + (r.pnl || 0);
+      r.cumPnl = cumPnlMap[key];
+    } else {
+      r.holdDays = null;
+      r.cumPnl = null;
+    }
+    if (r.status === 'OUT') {
+      delete entryDate[key];
+      delete cumPnlMap[key];
+    }
+  });
+
   rows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
   return {rows, isWeight, book: payload.book || '', notes: payload.notes || ''};
 }
@@ -1859,7 +1886,7 @@ function renderHistory() {
     const tr = document.createElement('tr');
     if (r.snapshot) tr.className = 'snapshot-row';
     const retClass = histTone(r.ret);
-    const pnlClass = histTone(r.pnl);
+    const cumClass = histTone(r.cumPnl);
     tr.innerHTML =
       `<td>${esc(r.date)}</td>`
       + `<td class="ticker-cell">${esc(r.ticker)}</td>`
@@ -1868,9 +1895,9 @@ function renderHistory() {
       + `<td class="num">${esc(histSize(r.size, isWeight))}</td>`
       + `<td class="num">${r.price == null ? '—' : esc(money2(r.price))}</td>`
       + `<td class="num ${retClass}">${esc(histPct(r.ret))}</td>`
-      + `<td class="num ${pnlClass}">${esc(
-            r.pnl == null ? '—'
-              : isWeight ? histPct(r.pnl) : histSigned(r.pnl, money2))}</td>`;
+      + `<td class="num">${r.holdDays == null ? '—' : r.holdDays + 'd'}</td>`
+      + `<td class="num ${cumClass}">${r.cumPnl == null ? '—'
+          : isWeight ? histPct(r.cumPnl) : histSigned(r.cumPnl, money2)}</td>`;
     fragment.appendChild(tr);
   });
 
@@ -1903,15 +1930,15 @@ function exportHistoryCsv() {
   if (!rows.length) return;
   const isWeight = historyRows.isWeight;
   const header = ['Date', 'Ticker', 'Status', isWeight ? 'TargetWeight' : 'Shares',
-                  isWeight ? 'Price' : 'Price', 'DayReturnPct',
-                  isWeight ? 'ContributionPP' : 'DayPnL'];
+                  'Price', 'DayReturnPct', 'HoldDays',
+                  isWeight ? 'CumContributionPP' : 'CumPnL'];
   const quote = value => {
     const text = value == null ? '' : String(value);
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const lines = [header.join(',')];
   rows.forEach(r => lines.push(
-    [r.date, r.ticker, r.status, r.size, r.price, r.ret, r.pnl].map(quote).join(',')
+    [r.date, r.ticker, r.status, r.size, r.price, r.ret, r.holdDays, r.cumPnl].map(quote).join(',')
   ));
 
   const blob = new Blob([lines.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
