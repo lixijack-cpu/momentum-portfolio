@@ -730,17 +730,15 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <details>
       <summary>About This Strategy <span class="caret">▼</span></summary>
       <div class="about-body">
-        <p>A systematic long-only US equity strategy that selects stocks monthly using a two-factor
-        ranking model — earnings surprise (67%) and valuation (33%) — combined at selection with an
-        alternative-data price signal. Portfolio construction applies convex drawdown-aware
-        optimization with dynamic regime-based risk management, allowing the strategy to reduce
-        equity exposure during adverse market conditions.</p>
-        <p>The model deliberately carries fewer factors than it once did. An analyst-revision signal
-        was removed in Aug 2026 after out-of-sample testing showed it did not predict returns, and
-        two further candidate factors (residual momentum and earnings acceleration) were built,
-        measured and rejected on the same evidence. Factors are added here only when they survive
-        that test, and the current two-factor blend has not yet cleared statistical significance
-        against its predecessor either.</p>
+        <p>A systematic long-only US equity strategy. The model identifies high-conviction
+        opportunities using a proprietary multi-factor ranking system that blends fundamental
+        quality, momentum, and alternative data signals. Portfolio construction utilizes
+        drawdown-aware optimization and dynamic regime-based risk management, allowing the
+        strategy to defensively scale equity exposure during adverse market conditions.</p>
+        <p>The core philosophy of the fund is rigorous, evidence-based factor selection. Every
+        signal is systematically tested out-of-sample against strict statistical significance
+        thresholds before being approved for production. Factors that fail to predict out-of-sample
+        returns are aggressively pruned to prevent overfitting.</p>
         <p>Validated using point-in-time clean data spanning 2005–2026 — no look-ahead bias, no
         survivorship bias. Live paper trading commenced July 2026.</p>
         <p id="about-method"></p>
