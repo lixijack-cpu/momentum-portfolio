@@ -618,7 +618,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
        which book is loaded, this one chooses which pane of it is shown. -->
   <nav class="view-tabs" id="view-tabs" aria-label="Dashboard view">
     <button type="button" class="tab" data-view="overview">Overview</button>
-    <button type="button" class="tab" data-view="transparency">Transparency</button>
+    <button type="button" class="tab" data-view="journal">Trade Journal</button>
   </nav>
 
   <div id="model-description"></div>
@@ -750,12 +750,12 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 
   </div><!-- /#view-overview -->
 
-  <div id="view-transparency" hidden>
+  <div id="view-journal" hidden>
     <section class="card">
       <div class="section-head history-head">
         <div>
-          <h2>Holdings History</h2>
-          <p>Results only. No strategy signals are disclosed.</p>
+          <h2>Trade Journal</h2>
+          <p>Every position, entry date, exit date, and daily return. Results only — no strategy signals disclosed.</p>
         </div>
         <span class="status-badge status-snapshot" id="history-book" hidden></span>
       </div>
@@ -797,7 +797,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 
       <p class="disclaimer" id="history-note"></p>
     </section>
-  </div><!-- /#view-transparency -->
+  </div><!-- /#view-journal -->
 
 </main>
 
@@ -1819,8 +1819,9 @@ function decodeHistory(payload) {
   const m = payload.monthly_nav || {dates: [], nav: []};
   m.dates.forEach((date, i) => {
     const previous = i ? m.nav[i - 1] : null;
+    const monthLabel = date.slice(0, 7);
     rows.push({
-      date, ticker: 'Portfolio NAV', status: 'SNAPSHOT',
+      date, ticker: `Month-End NAV (${monthLabel})`, status: 'SNAPSHOT',
       size: null, price: m.nav[i],
       ret: previous ? (m.nav[i] / previous - 1) * 100 : null,
       pnl: null, snapshot: true
@@ -1994,8 +1995,8 @@ async function loadHistory(account) {
 }
 
 function resolveView() {
-  return new URLSearchParams(window.location.search).get('view') === 'transparency'
-    ? 'transparency' : 'overview';
+  const v = new URLSearchParams(window.location.search).get('view');
+  return (v === 'journal' || v === 'transparency') ? 'journal' : 'overview';
 }
 
 /* Both selections live in the query string, so a link carries the model *and* the pane.
@@ -2015,9 +2016,9 @@ function setView(view) {
     else tab.removeAttribute('aria-current');
   });
   document.getElementById('view-overview').hidden = view !== 'overview';
-  document.getElementById('view-transparency').hidden = view !== 'transparency';
+  document.getElementById('view-journal').hidden = view !== 'journal';
   writeUrl(resolveAccount(), view);
-  if (view === 'transparency') loadHistory(resolveAccount());
+  if (view === 'journal') loadHistory(resolveAccount());
 }
 
 /* Bound once at boot, never from a renderer -- registering these inside renderHistory
@@ -2102,7 +2103,7 @@ async function loadModelData(account, {initial = false} = {}) {
   // The history pane is per-book, so a swap while it is open has to refetch and
   // re-render it; the payloads are cached, so returning to a book is instant. On the
   // first paint boot() calls setView instead, which covers this.
-  if (view === 'transparency' && !initial) loadHistory(account);
+  if (view === 'journal' && !initial) loadHistory(account);
   return true;
 }
 
