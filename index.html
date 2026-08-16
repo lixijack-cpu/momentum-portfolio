@@ -289,12 +289,17 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
    -- the three labels are ~439px intrinsic against ~339px of usable width at a 375px
    viewport, and body{overflow-x:hidden} clips the overflow rather than scrolling it.
    The narrow breakpoint below switches to equal thirds so it never has to wrap at all. */
-.account-tabs{
+/* .view-tabs shares every base rule so the two strips are visually identical, but is
+   deliberately excluded from the narrow-viewport override below: that one hard-codes
+   three equal columns for the three models, which a two-segment content switcher must
+   not inherit. The two bars are also scoped differently -- .account-tabs swaps the whole
+   snapshot, .view-tabs only swaps which pane of it is on screen. */
+.account-tabs,.view-tabs{
   display:inline-flex;align-self:center;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--border);border-radius:999px;
   padding:4px;gap:4px;box-shadow:var(--card-shadow);
 }
-.account-tabs .tab{
+.account-tabs .tab,.view-tabs .tab{
   color:var(--muted);text-decoration:none;white-space:nowrap;
   background:transparent;border:0;cursor:pointer;
   font:inherit;font-size:.8rem;font-weight:600;padding:7px 15px;border-radius:999px;
@@ -304,17 +309,20 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 /* The count rides smaller and lighter so the model name keeps the visual weight and the
    segment stays one line, matching how .stat .value handles its unit. */
 .account-tabs .tab .count{font-size:.86em;font-weight:500;opacity:.72;margin-left:.32em}
-.account-tabs .tab:hover{color:var(--ink);background:var(--hover-wash)}
-.account-tabs .tab[aria-current="page"]{
+.account-tabs .tab:hover,.view-tabs .tab:hover{color:var(--ink);background:var(--hover-wash)}
+.account-tabs .tab[aria-current="page"],.view-tabs .tab[aria-current="page"]{
   background:var(--tab-active-bg);
   color:var(--tab-active-ink);
   box-shadow:var(--tab-active-shadow);
 }
 .account-tabs .tab[aria-current="page"] .count{opacity:.85}
-.account-tabs .tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.account-tabs .tab:focus-visible,.view-tabs .tab:focus-visible{
+  outline:2px solid var(--blue);outline-offset:2px;
+}
 /* During a swap the strip stays visible and interactive-looking but ignores input, so a
    double-click cannot start a second fetch while the charts are mid-teardown. */
-.account-tabs[aria-busy="true"]{pointer-events:none;opacity:.62}
+.account-tabs[aria-busy="true"],.view-tabs[aria-busy="true"]{pointer-events:none;opacity:.62}
+.view-tabs{margin-bottom:22px}
 .scale-badge{
   display:inline-flex;align-items:center;
   padding:4px 11px;border-radius:999px;white-space:nowrap;
@@ -353,6 +361,79 @@ tbody tr:last-child{border-bottom:0}
 tbody tr:hover{background:var(--hover-wash)}
 .edge-pos{color:var(--green);font-weight:600}
 .edge-neg{color:var(--amber);font-weight:600}
+
+/* ---------- transparency ----------
+   Status pills follow .scale-badge rather than fixed hex values: every colour resolves
+   through a token, so the same markup reads correctly in Carbon Graphite and Frosted
+   Slate without a second rule set or a repaint hook. */
+.status-badge{
+  display:inline-flex;align-items:center;justify-content:center;min-width:74px;
+  padding:4px 11px;border-radius:999px;white-space:nowrap;
+  font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+}
+.status-in{
+  background:color-mix(in srgb, var(--green) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--green) 38%, transparent);
+  color:var(--green);
+}
+.status-hold{
+  background:color-mix(in srgb, var(--blue) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--blue) 32%, transparent);
+  color:var(--blue);
+}
+.status-out{
+  background:color-mix(in srgb, var(--red) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--red) 38%, transparent);
+  color:var(--red);
+}
+.status-snapshot{
+  background:color-mix(in srgb, var(--grey) 13%, transparent);
+  border:1px solid color-mix(in srgb, var(--grey) 30%, transparent);
+  color:var(--grey-deep);
+}
+.history-head{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:16px;flex-wrap:wrap;
+}
+.history-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 4px}
+.field{
+  font:inherit;font-size:.78rem;color:var(--ink);
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:7px 14px;transition:border-color .18s,background .18s;
+}
+.field::placeholder{color:var(--muted)}
+.field:hover{border-color:var(--border-strong)}
+.field:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+select.field{cursor:pointer;padding-right:10px}
+.btn-ghost{
+  font:inherit;font-size:.78rem;font-weight:600;color:var(--ink-2);cursor:pointer;
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:7px 16px;transition:color .18s,border-color .18s,background .18s;
+}
+.btn-ghost:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash)}
+.btn-ghost:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.btn-ghost[disabled]{opacity:.45;cursor:default}
+.history-empty{
+  text-align:center;padding:56px 22px;color:var(--muted);
+  font-size:.86rem;line-height:1.7;
+}
+.history-empty strong{display:block;color:var(--ink);font-size:1rem;margin-bottom:8px}
+/* Skeleton rows hold the table's height while the payload lands, so activating the tab
+   does not collapse the page and bounce the scroll position. */
+.skel-row{
+  height:15px;border-radius:5px;margin:16px 0;
+  background:linear-gradient(90deg,var(--track) 25%,var(--hover-wash-strong) 37%,var(--track) 63%);
+  background-size:400% 100%;animation:skel 1.3s ease-in-out infinite;
+}
+@keyframes skel{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.ticker-cell{font-weight:600}
+.snapshot-row td{color:var(--muted)}
+/* The filter controls are self-evident sighted-side but need real labels for a screen
+   reader; a placeholder is not an accessible name. */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
 
 /* ---------- heatmap ---------- */
 .heat-wrap{display:flex;gap:10px;align-items:stretch}
@@ -533,7 +614,16 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 
 <main hidden id="main">
 
+  <!-- Content views. Deliberately a separate strip from #account-tabs: that one chooses
+       which book is loaded, this one chooses which pane of it is shown. -->
+  <nav class="view-tabs" id="view-tabs" aria-label="Dashboard view">
+    <button type="button" class="tab" data-view="overview">Overview</button>
+    <button type="button" class="tab" data-view="transparency">Transparency</button>
+  </nav>
+
   <div id="model-description"></div>
+
+  <div id="view-overview">
 
   <section class="hero">
     <div class="card stat">
@@ -657,6 +747,57 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       </div>
     </details>
   </section>
+
+  </div><!-- /#view-overview -->
+
+  <div id="view-transparency" hidden>
+    <section class="card">
+      <div class="section-head history-head">
+        <div>
+          <h2>Holdings History</h2>
+          <p>Results only. No strategy signals are disclosed.</p>
+        </div>
+        <span class="status-badge status-snapshot" id="history-book" hidden></span>
+      </div>
+
+      <div class="history-tools">
+        <label class="sr-only" for="history-month">Filter by month</label>
+        <select class="field" id="history-month"><option value="">All months</option></select>
+        <label class="sr-only" for="history-ticker">Search ticker</label>
+        <input class="field" id="history-ticker" type="search" placeholder="Search ticker…"
+               autocomplete="off" spellcheck="false">
+        <button type="button" class="btn-ghost" id="history-export">Export CSV</button>
+        <span class="caption" id="history-count" style="margin:0"></span>
+      </div>
+
+      <div id="history-skeleton" hidden>
+        <div class="skel-row" style="width:100%"></div>
+        <div class="skel-row" style="width:92%"></div>
+        <div class="skel-row" style="width:96%"></div>
+        <div class="skel-row" style="width:88%"></div>
+        <div class="skel-row" style="width:94%"></div>
+      </div>
+
+      <div id="history-empty" class="history-empty" hidden></div>
+
+      <div class="scroll-x" id="history-table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Ticker</th><th>Status</th>
+              <th id="history-size-head">Shares</th><th>Price</th>
+              <th>Day Return</th><th id="history-pnl-head">Day P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+
+      <button type="button" class="show-all" id="history-more" hidden></button>
+
+      <p class="disclaimer" id="history-note"></p>
+    </section>
+  </div><!-- /#view-transparency -->
 
 </main>
 
@@ -1611,6 +1752,293 @@ function resetTransientChrome(account) {
   document.getElementById('model-description').textContent = ACCOUNTS[account].note;
 }
 
+/* ---------- transparency ----------
+   Results-only position history: entries, exits, prices and realised returns. The two
+   payloads are generated by scripts/build_holdings_history.py in the research repo,
+   which enforces a key allowlist and a privacy firewall on the way out -- so a column
+   added upstream cannot leak a score onto this page by accident.
+
+   Cached per account because the institutional payload is ~100KB and toggling models
+   back and forth must not refetch it. */
+const HISTORY_FILES = {
+  '': 'retail_holdings_history.json',
+  institutional: 'institutional_holdings_history.json'
+};
+const HISTORY_CACHE = {};
+const HISTORY_PAGE = 250;
+
+let historyRows = [];
+let historyShowAll = false;
+
+const EMPTY_NO_DATA =
+  '<strong>No history available yet.</strong>'
+  + 'Data begins accumulating from first live trading day.';
+/* The shadow book is weight-only research output; run_production.py never writes it to
+   the ledger, so there is genuinely nothing to show rather than a load failure. */
+const EMPTY_SHADOW =
+  '<strong>No history for the shadow book.</strong>'
+  + 'The shadow book is research output and is not recorded in the live ledger, so it '
+  + 'has no entry and exit history to publish. Switch to Retail or Institutional above.';
+const EMPTY_FILTER =
+  '<strong>No rows match these filters.</strong>'
+  + 'Try clearing the ticker search or choosing a different month.';
+const EMPTY_ERROR =
+  '<strong>History unavailable.</strong>'
+  + 'The holdings history file could not be loaded. Please check back shortly.';
+
+/* daily_return_pct arrives already in percent, unlike the fraction-valued series the
+   rest of this page carries -- so these do not go through pct()/signedPct(). */
+const histPct = v =>
+  v == null ? '—' : (v > 0 ? '+' : v < 0 ? '' : '') + v.toFixed(2) + '%';
+const histSigned = (v, unit) =>
+  v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + unit(Math.abs(v));
+/* An unchanged mark is neither a gain nor a loss. Colouring zero green reads as a win
+   on days the ledger simply carried yesterday's price forward. */
+const histTone = v => v == null || v === 0 ? '' : v > 0 ? 'edge-pos' : 'edge-neg';
+const histSize = (v, isWeight) =>
+  v == null ? '—' : isWeight ? (v * 100).toFixed(3) + '%' : String(v);
+
+/* Columnar on the wire for size; the table wants rows. Decoded once per fetch. */
+function decodeHistory(payload) {
+  const d = payload.live_daily || {};
+  const isWeight = !('shares' in d);
+  const sizes = isWeight ? d.target_weight : d.shares;
+  const pnls = isWeight ? d.contribution_pp : d.daily_pnl;
+
+  const rows = (d.dates || []).map((date, i) => ({
+    date, ticker: d.tickers[i], status: d.status[i],
+    size: sizes[i], price: d.prices[i],
+    ret: d.daily_return_pct[i], pnl: pnls[i],
+    snapshot: false
+  }));
+
+  /* Month-end backtest marks are portfolio-level, not positions: they carry a NAV
+     rather than a share count, and their return spans a month rather than a day. They
+     are labelled SNAPSHOT and leave the size and P&L columns empty rather than filling
+     them with a differently-defined number. */
+  const m = payload.monthly_nav || {dates: [], nav: []};
+  m.dates.forEach((date, i) => {
+    const previous = i ? m.nav[i - 1] : null;
+    rows.push({
+      date, ticker: 'Portfolio NAV', status: 'SNAPSHOT',
+      size: null, price: m.nav[i],
+      ret: previous ? (m.nav[i] / previous - 1) * 100 : null,
+      pnl: null, snapshot: true
+    });
+  });
+
+  rows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  return {rows, isWeight, book: payload.book || '', notes: payload.notes || ''};
+}
+
+function historyFiltered() {
+  const month = document.getElementById('history-month').value;
+  const query = document.getElementById('history-ticker').value.trim().toUpperCase();
+  return historyRows.filter(r =>
+    (!month || r.date.slice(0, 7) === month)
+    && (!query || r.ticker.toUpperCase().includes(query))
+  );
+}
+
+function showHistoryEmpty(html) {
+  const empty = document.getElementById('history-empty');
+  empty.innerHTML = html;
+  empty.hidden = false;
+  document.getElementById('history-table-wrap').hidden = true;
+  document.getElementById('history-more').hidden = true;
+}
+
+function renderHistory() {
+  const rows = historyFiltered();
+  const count = document.getElementById('history-count');
+
+  if (!rows.length) {
+    count.textContent = '';
+    showHistoryEmpty(historyRows.length ? EMPTY_FILTER : EMPTY_NO_DATA);
+    return;
+  }
+
+  document.getElementById('history-empty').hidden = true;
+  document.getElementById('history-table-wrap').hidden = false;
+
+  const shown = historyShowAll ? rows : rows.slice(0, HISTORY_PAGE);
+  const isWeight = historyRows.isWeight;
+  const fragment = document.createDocumentFragment();
+
+  shown.forEach(r => {
+    const tr = document.createElement('tr');
+    if (r.snapshot) tr.className = 'snapshot-row';
+    const retClass = histTone(r.ret);
+    const pnlClass = histTone(r.pnl);
+    tr.innerHTML =
+      `<td>${esc(r.date)}</td>`
+      + `<td class="ticker-cell">${esc(r.ticker)}</td>`
+      + `<td><span class="status-badge status-${esc(r.status.toLowerCase())}">`
+      + `${esc(r.status)}</span></td>`
+      + `<td class="num">${esc(histSize(r.size, isWeight))}</td>`
+      + `<td class="num">${r.price == null ? '—' : esc(money2(r.price))}</td>`
+      + `<td class="num ${retClass}">${esc(histPct(r.ret))}</td>`
+      + `<td class="num ${pnlClass}">${esc(
+            r.pnl == null ? '—'
+              : isWeight ? histPct(r.pnl) : histSigned(r.pnl, money2))}</td>`;
+    fragment.appendChild(tr);
+  });
+
+  const body = document.getElementById('history-body');
+  body.innerHTML = '';
+  body.appendChild(fragment);
+
+  count.textContent = `${shown.length.toLocaleString('en-US')} of `
+    + `${rows.length.toLocaleString('en-US')} rows`;
+
+  const more = document.getElementById('history-more');
+  more.hidden = rows.length <= HISTORY_PAGE;
+  more.textContent = historyShowAll
+    ? 'Show fewer'
+    : `Show all ${rows.length.toLocaleString('en-US')} rows`;
+}
+
+function populateHistoryMonths() {
+  const select = document.getElementById('history-month');
+  const months = [...new Set(historyRows.map(r => r.date.slice(0, 7)))]
+    .sort().reverse();
+  select.innerHTML = '<option value="">All months</option>'
+    + months.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+}
+
+/* Exports raw values rather than the formatted cells: a spreadsheet wants -2.02, not
+   "−2.02%". Only the rows currently passing the filters are written. */
+function exportHistoryCsv() {
+  const rows = historyFiltered();
+  if (!rows.length) return;
+  const isWeight = historyRows.isWeight;
+  const header = ['Date', 'Ticker', 'Status', isWeight ? 'TargetWeight' : 'Shares',
+                  isWeight ? 'Price' : 'Price', 'DayReturnPct',
+                  isWeight ? 'ContributionPP' : 'DayPnL'];
+  const quote = value => {
+    const text = value == null ? '' : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [header.join(',')];
+  rows.forEach(r => lines.push(
+    [r.date, r.ticker, r.status, r.size, r.price, r.ret, r.pnl].map(quote).join(',')
+  ));
+
+  const blob = new Blob([lines.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `holdings_history_${resolveAccount() || 'retail'}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function loadHistory(account) {
+  const skeleton = document.getElementById('history-skeleton');
+  const book = document.getElementById('history-book');
+  const file = HISTORY_FILES[account];
+
+  document.getElementById('history-ticker').value = '';
+  document.getElementById('history-month').innerHTML =
+    '<option value="">All months</option>';
+  historyShowAll = false;
+
+  if (!file) {
+    historyRows = [];
+    skeleton.hidden = true;
+    book.hidden = true;
+    document.getElementById('history-count').textContent = '';
+    document.getElementById('history-note').textContent = '';
+    showHistoryEmpty(EMPTY_SHADOW);
+    return;
+  }
+
+  let payload = HISTORY_CACHE[account];
+  if (!payload) {
+    skeleton.hidden = false;
+    document.getElementById('history-table-wrap').hidden = true;
+    document.getElementById('history-empty').hidden = true;
+    document.getElementById('history-more').hidden = true;
+    try {
+      const res = await fetch('./' + file, {cache: 'no-store'});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      payload = await res.json();
+      HISTORY_CACHE[account] = payload;
+    } catch (err) {
+      console.error('[dashboard] history fetch failed', file, err);
+      historyRows = [];
+      skeleton.hidden = true;
+      book.hidden = true;
+      showHistoryEmpty(EMPTY_ERROR);
+      return;
+    }
+  }
+  skeleton.hidden = true;
+
+  const decoded = decodeHistory(payload);
+  historyRows = decoded.rows;
+  historyRows.isWeight = decoded.isWeight;
+
+  document.getElementById('history-size-head').textContent =
+    decoded.isWeight ? 'Weight' : 'Shares';
+  document.getElementById('history-pnl-head').textContent =
+    decoded.isWeight ? 'Contribution' : 'Day P&L';
+  book.hidden = false;
+  book.textContent = decoded.book;
+  document.getElementById('history-note').textContent = decoded.notes;
+
+  populateHistoryMonths();
+  renderHistory();
+}
+
+function resolveView() {
+  return new URLSearchParams(window.location.search).get('view') === 'transparency'
+    ? 'transparency' : 'overview';
+}
+
+/* Both selections live in the query string, so a link carries the model *and* the pane.
+   Written in one place because loadModelData and setView each change only one of them
+   and the naive rebuild drops the other. */
+function writeUrl(account, view) {
+  const params = new URLSearchParams();
+  if (account) params.set('account', account);
+  if (view && view !== 'overview') params.set('view', view);
+  const query = params.toString();
+  history.replaceState({account, view}, '', query ? `?${query}` : window.location.pathname);
+}
+
+function setView(view) {
+  document.querySelectorAll('#view-tabs .tab').forEach(tab => {
+    if (tab.dataset.view === view) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
+  });
+  document.getElementById('view-overview').hidden = view !== 'overview';
+  document.getElementById('view-transparency').hidden = view !== 'transparency';
+  writeUrl(resolveAccount(), view);
+  if (view === 'transparency') loadHistory(resolveAccount());
+}
+
+/* Bound once at boot, never from a renderer -- registering these inside renderHistory
+   would stack a fresh handler on every filter keystroke. */
+function initViewTabs() {
+  document.getElementById('view-tabs').addEventListener('click', event => {
+    const tab = event.target.closest('.tab');
+    if (!tab || tab.dataset.view === resolveView()) return;
+    setView(tab.dataset.view);
+  });
+
+  const rerender = () => { historyShowAll = false; renderHistory(); };
+  document.getElementById('history-month').addEventListener('change', rerender);
+  document.getElementById('history-ticker').addEventListener('input', rerender);
+  document.getElementById('history-export').addEventListener('click', exportHistoryCsv);
+  document.getElementById('history-more').addEventListener('click', () => {
+    historyShowAll = !historyShowAll;
+    renderHistory();
+  });
+}
+
 /* The single entry point for putting a model on screen. Used for the first paint and
    every subsequent toggle, so there is one ordering to reason about rather than two. */
 async function loadModelData(account, {initial = false} = {}) {
@@ -1666,9 +2094,15 @@ async function loadModelData(account, {initial = false} = {}) {
   }
 
   // Keeps the active model linkable and survivable across a refresh, without the full
-  // navigation the old anchor-based tabs cost.
-  const url = account ? `?account=${account}` : window.location.pathname;
-  history.replaceState({account}, '', url);
+  // navigation the old anchor-based tabs cost. The pane selection rides along, so a
+  // model swap does not silently bounce the visitor back to Overview.
+  const view = resolveView();
+  writeUrl(account, view);
+
+  // The history pane is per-book, so a swap while it is open has to refetch and
+  // re-render it; the payloads are cached, so returning to a book is instant. On the
+  // first paint boot() calls setView instead, which covers this.
+  if (view === 'transparency' && !initial) loadHistory(account);
   return true;
 }
 
@@ -1686,11 +2120,15 @@ async function boot() {
   // Before the fetch, so both controls work even on the failure screen.
   initTheme();
   initAccountTabs();
+  initViewTabs();
   initEquityControls();
   captureNoteDefaults();
   applyDefaults();
 
   if (!await loadModelData(resolveAccount(), {initial: true})) return;
+
+  // After the model is on screen, so the pane it reveals is already populated.
+  setView(resolveView());
 
   document.getElementById('state').hidden = true;
   document.getElementById('hdr').hidden = false;
