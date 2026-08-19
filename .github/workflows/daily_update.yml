@@ -52,12 +52,18 @@ jobs:
         if: steps.schedule.outputs.run == 'true'
         run: pip install pandas yfinance
 
-      # The builder refreshes prices in the checked-out snapshot in place. Every
-      # failure path inside it exits 0 and leaves the file untouched, so a Yahoo
-      # outage simply republishes yesterday's numbers instead of breaking the page.
+      # The builder refreshes prices in the checked-out snapshot in place, filling
+      # in any sessions the curve is missing. Every failure path leaves the file
+      # untouched, so a bad run republishes yesterday's numbers rather than
+      # breaking the page.
+      #
+      # --require-update makes a skipped refresh fail the job. Without it the step
+      # exits 0 on every error and the run goes green while publishing nothing --
+      # which is how a snapshot schema change stopped the dashboard for five days
+      # without a single red tick.
       - name: Build updated snapshot
         if: steps.schedule.outputs.run == 'true'
-        run: python build_snapshot_cloud.py --output portfolio_snapshot.json
+        run: python build_snapshot_cloud.py --output portfolio_snapshot.json --require-update
 
       # Defence in depth: never publish a snapshot the dashboard cannot render.
       # Failing here stops the commit and the deploy, so Pages keeps serving the
