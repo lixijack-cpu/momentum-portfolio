@@ -743,14 +743,17 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <details>
       <summary>About This Strategy <span class="caret">▼</span></summary>
       <div class="about-body">
-        <p>A live, fully automated systematic equity framework I architected from scratch to independently research, backtest, and execute institutional-grade quantitative strategies. The system dynamically ranks a universe of ~1,500 U.S. equities using composite multi-factor signals (earnings momentum, valuation, and price momentum) protected by a macro-regime risk overlay.</p>
-        <p>The platform continuously operates three simultaneous execution environments:</p>
-        <ul style="margin: 0 0 var(--space-4) var(--space-5); line-height: 1.6;">
-          <li style="margin-bottom: var(--space-2);"><strong>Institutional Production:</strong> Flagship 104-stock model simulating a $5M AUM book. (20-year Backtest: 14.0% CAGR / Sharpe 0.94, outperforming the S&P 500 by +296 bps/yr).</li>
-          <li style="margin-bottom: var(--space-2);"><strong>Retail Execution:</strong> Concentrated 10-stock model mathematically optimized for low-capital constraints and retail broker limitations. (20-year Backtest: 17.1% CAGR).</li>
-          <li style="margin: 0;"><strong>Shadow Track:</strong> Experimental forward-testing laboratory for evaluating uncertified alpha signals strictly out-of-sample.</li>
-        </ul>
-        <p>The entire end-to-end pipeline—from automated data ingestion, point-in-time signal generation, and pre-trade risk management, to live paper-trading and continuous GitHub Pages dashboard deployment—is built entirely in Python and executes autonomously every market close.</p>
+        <p>A systematic long-only US equity strategy. The model identifies high-conviction
+        opportunities using a proprietary multi-factor ranking system that blends fundamental
+        quality, momentum, and alternative data signals. Portfolio construction utilizes
+        drawdown-aware optimization and dynamic regime-based risk management, allowing the
+        strategy to defensively scale equity exposure during adverse market conditions.</p>
+        <p>The core philosophy of the fund is rigorous, evidence-based factor selection. Every
+        signal is systematically tested out-of-sample against strict statistical significance
+        thresholds before being approved for production. Factors that fail to predict out-of-sample
+        returns are aggressively pruned to prevent overfitting.</p>
+        <p>Validated using point-in-time clean data spanning 2005–2026 — no look-ahead bias, no
+        survivorship bias. Live paper trading commenced July 2026.</p>
         <p id="about-method"></p>
       </div>
     </details>
