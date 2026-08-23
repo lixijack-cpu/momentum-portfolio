@@ -276,13 +276,14 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
 
 /* ---------- hero stats ---------- */
 .hero{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.hero-tools{margin-bottom:16px}
 .stat .label{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.09em;font-weight:500}
 .stat .value{font-weight:800;font-size:clamp(2rem,4.2vw,2.7rem);line-height:1.1;margin:8px 0 2px;letter-spacing:-0.03em}
 /* Units ride at a smaller size so a value like "+296 bps/yr" stays on one line and the
    number keeps the visual weight, instead of wrapping and unbalancing the stat row. */
 .stat .value .unit{font-size:.4em;font-weight:600;letter-spacing:0;margin-left:.2em}
 .stat .foot{color:var(--muted);font-size:.76rem}
-.v-blue{color:var(--blue)}.v-violet{color:var(--violet)}.v-amber{color:var(--amber)}.v-green{color:var(--green)}
+.v-blue{color:var(--blue)}.v-violet{color:var(--violet)}.v-amber{color:var(--amber)}.v-green{color:var(--green)}.v-red{color:var(--red)}
 
 /* ---------- charts ---------- */
 .chart-box{position:relative;height:420px}
@@ -638,24 +639,35 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 
   <div id="view-overview">
 
+  <!-- Swaps the four cards below between the certified backtest window and the live
+       account. Hidden entirely when the loaded book carries no live benchmark, which is
+       every book except retail: the marked books are only repriced at the monthly
+       rebalance, and the cloud refresher never touches them. -->
+  <div class="chart-tools hero-tools" id="hero-tools">
+    <div class="toggle" role="group" aria-label="Hero metrics">
+      <button type="button" id="sel-backtest" aria-pressed="true">Backtest Stats</button>
+      <button type="button" id="sel-live" aria-pressed="false">Live Performance</button>
+    </div>
+  </div>
+
   <section class="hero">
     <div class="card stat">
-      <div class="label">Annualised Return</div>
+      <div class="label" id="k-cagr-label">Annualised Return</div>
       <div class="value v-blue num" id="k-cagr">—</div>
       <div class="foot" id="k-cagr-foot">—</div>
     </div>
     <div class="card stat">
-      <div class="label">Sharpe Ratio</div>
+      <div class="label" id="k-sharpe-label">Sharpe Ratio</div>
       <div class="value v-violet num" id="k-sharpe">—</div>
       <div class="foot" id="k-sharpe-foot">—</div>
     </div>
     <div class="card stat">
-      <div class="label">Max Drawdown</div>
+      <div class="label" id="k-dd-label">Max Drawdown</div>
       <div class="value v-amber num" id="k-dd">—</div>
       <div class="foot" id="k-dd-foot">—</div>
     </div>
     <div class="card stat">
-      <div class="label">Excess vs S&amp;P 500</div>
+      <div class="label" id="k-edge-label">Excess vs S&amp;P 500</div>
       <div class="value v-green num" id="k-edge">—</div>
       <div class="foot" id="k-edge-foot">—</div>
     </div>
@@ -1008,26 +1020,131 @@ let equityChart = null;
 let sectorChart = null;
 let SNAP = null;
 
+/* ---------- hero cards ----------
+   The four cards tell two different stories -- the certified backtest window and the live
+   account -- and only one can be on screen. Every pass writes label, value, foot AND hue
+   for all four slots, so nothing survives from the view before it. That is also why none
+   of this needs registering in RESETTABLE_NOTES: these are unconditional writes, not the
+   one-way conditional writes that list exists to undo.
+
+   Hue is part of the payload because the live numbers can be negative, which the backtest
+   figures never are. A losing month rendered in the backtest view's green would read as a
+   win. */
+const HERO_HUES = ['v-blue', 'v-violet', 'v-amber', 'v-green', 'v-red'];
+const signHue = v => (v < 0 ? 'v-red' : 'v-green');
+
+let HERO_VIEW = 'backtest';
+
+function setCard(slot, {label, value, html, foot, hue}) {
+  document.getElementById(`${slot}-label`).textContent = label;
+  const el = document.getElementById(slot);
+  if (html != null) el.innerHTML = html; else el.textContent = value;
+  el.classList.remove(...HERO_HUES);
+  el.classList.add(hue);
+  document.getElementById(`${slot}-foot`).textContent = foot;
+}
+
+/* Only the retail book carries these: the marked books are repriced at the monthly
+   rebalance and never pass through the cloud refresher, so they have no benchmark over
+   the live window at all. A live return with nothing to compare it against is not a view
+   worth offering, so the selector hides rather than showing half a comparison. */
+const hasLiveBenchmark = s =>
+  !!s && !!s.live && s.live.nav != null && s.live.benchmark_return != null;
+
+function syncHeroSelector(s) {
+  const available = hasLiveBenchmark(s);
+  document.getElementById('hero-tools').hidden = !available;
+  if (!available) HERO_VIEW = 'backtest';
+}
+
+function swapHeroCards(view) {
+  const s = SNAP;
+  if (!s) return;
+  if (view === 'live' && !hasLiveBenchmark(s)) view = 'backtest';
+  HERO_VIEW = view;
+
+  document.getElementById('sel-backtest')
+    .setAttribute('aria-pressed', String(view === 'backtest'));
+  document.getElementById('sel-live')
+    .setAttribute('aria-pressed', String(view === 'live'));
+
+  if (view === 'live') {
+    const live = s.live;
+    const bps = Math.round(live.excess_return * 10000);
+    setCard('k-cagr', {
+      label: 'Live Return',
+      value: signedPct(live.since_inception_return),
+      foot: `NAV ${money2(live.nav)} · Inception ${live.inception_date}`,
+      hue: signHue(live.since_inception_return)
+    });
+    setCard('k-sharpe', {
+      label: 'Time Horizon',
+      html: `${esc(live.days_live)}<span class="unit">days</span>`,
+      foot: 'Trading sessions since inception',
+      hue: 'v-violet'
+    });
+    setCard('k-dd', {
+      label: 'S&P 500 Return',
+      value: signedPct(live.benchmark_return),
+      // Total return, matching a NAV that sweeps dividends into cash. A price-only
+      // index here would book SPY's yield as our alpha.
+      foot: 'SPY total return over the identical window',
+      // Deliberately not sign-coloured. This is the yardstick, not our result; painting
+      // it green or red would read as a verdict on the benchmark.
+      hue: 'v-amber'
+    });
+    setCard('k-edge', {
+      label: 'Live Alpha',
+      html: `${bps >= 0 ? '+' : ''}${esc(bps)}<span class="unit">bps</span>`,
+      // Reads correctly at either sign. "Outperformance" under a negative number is
+      // the kind of caption that makes a page look like it is spinning its own results.
+      foot: 'Live return less S&P 500, same window',
+      hue: signHue(bps)
+    });
+    return;
+  }
+
+  const h = s.headline;
+  const bps = h.excess_vs_spy_bps;
+  setCard('k-cagr', {
+    label: 'Annualised Return',
+    value: pct(h.cagr),
+    foot: `S&P 500 ${pct(h.benchmark_cagr)} over the same window`,
+    hue: 'v-blue'
+  });
+  setCard('k-sharpe', {
+    label: 'Sharpe Ratio',
+    value: h.sharpe.toFixed(3),
+    foot: `S&P 500 ${h.benchmark_sharpe.toFixed(3)} · daily, rf = 0`,
+    hue: 'v-violet'
+  });
+  setCard('k-dd', {
+    label: 'Max Drawdown',
+    value: pct(h.max_drawdown, 1),
+    foot: `Month-end sampled · ${pct(h.max_drawdown_daily, 1)} on daily marks`,
+    hue: 'v-amber'
+  });
+  setCard('k-edge', {
+    label: 'Excess vs S&P 500',
+    html: `${bps >= 0 ? '+' : ''}${esc(bps)}<span class="unit">bps/yr</span>`,
+    foot: `S&P 500 max drawdown ${pct(h.benchmark_max_drawdown, 1)}`,
+    hue: 'v-green'
+  });
+}
+
+function initHeroSelector() {
+  document.getElementById('hero-tools').addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    swapHeroCards(button.id === 'sel-live' ? 'live' : 'backtest');
+  });
+}
+
 function renderHeadline(s) {
   const h = s.headline;
-  document.getElementById('k-cagr').textContent = pct(h.cagr);
-  document.getElementById('k-cagr-foot').textContent =
-    `S&P 500 ${pct(h.benchmark_cagr)} over the same window`;
 
-  document.getElementById('k-sharpe').textContent = h.sharpe.toFixed(3);
-  document.getElementById('k-sharpe-foot').textContent =
-    `S&P 500 ${h.benchmark_sharpe.toFixed(3)} · daily, rf = 0`;
-
-  document.getElementById('k-dd').textContent = pct(h.max_drawdown, 1);
-  document.getElementById('k-dd-foot').textContent =
-    `Month-end sampled · ${pct(h.max_drawdown_daily, 1)} on daily marks`;
-
-  const bps = h.excess_vs_spy_bps;
-  document.getElementById('k-edge').innerHTML =
-    `${bps >= 0 ? '+' : ''}${esc(bps)}<span class="unit">bps/yr</span>`;
-  document.getElementById('k-edge-foot').textContent =
-    `S&P 500 max drawdown ${pct(h.benchmark_max_drawdown, 1)}`;
-
+  // Both of these annotate the equity chart below rather than the cards, and they
+  // describe the backtest window whichever hero view is showing. They do not swap.
   document.getElementById('curve-sub').textContent =
     `${h.months_oos} months out-of-sample · ${h.window_start} to ${h.window_end} · net of costs`;
 
@@ -1035,6 +1152,11 @@ function renderHeadline(s) {
     `Headline figures are measured over ${h.months_oos} out-of-sample months ` +
     `(${h.window_start} to ${h.window_end}), net of transaction costs, against the ` +
     `S&P 500 total-price series over the identical window.`;
+
+  // Re-asserted on every model load, so a swap into a book without a live benchmark
+  // cannot strand the page on a view it can no longer fill.
+  syncHeroSelector(s);
+  swapHeroCards(HERO_VIEW);
 }
 
 function renderPill(s) {
@@ -2150,6 +2272,7 @@ async function boot() {
   initAccountTabs();
   initViewTabs();
   initEquityControls();
+  initHeroSelector();
   captureNoteDefaults();
   applyDefaults();
 

@@ -85,6 +85,11 @@ jobs:
           assert 1 <= n <= 25, f"expected the small account, found {n} holdings"
           assert len(d["equity_curve"]["backtest"]) > 5000, "backtest curve truncated"
           assert d["live"]["nav"] > 0, "live NAV is not positive"
+          # The live hero view needs both numbers or neither. Yahoo dropping SPY is a
+          # tolerated outcome (the view hides itself); half a comparison is not.
+          live = d["live"]
+          assert (live.get("benchmark_return") is None) == (live.get("excess_return") is None), \
+              "live benchmark_return and excess_return must be set together"
           print(f"ok: {n} holdings, cagr={d['headline']['cagr']}, "
                 f"sharpe={d['headline']['sharpe']}, as_of={d['as_of']}")
           PY

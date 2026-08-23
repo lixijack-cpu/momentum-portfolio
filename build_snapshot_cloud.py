@@ -85,6 +85,12 @@ MIN_PRICE_COVERAGE = 0.8
 # curve cannot balloon the published history in a single pass.
 MAX_BACKFILL_SESSIONS = 25
 
+# The live-window benchmark.  This is the ONLY place it can be computed: the
+# research repo's SPY parquet ends 2026-07-13 and ``equity_curve.spy`` stops at
+# the last marked month, both of which predate the live inception -- so the
+# published snapshot carries no SPY observation inside the live window at all.
+BENCHMARK_TICKER = "SPY"
+
 
 class SnapshotUpdateError(RuntimeError):
     """Raised when the snapshot cannot be refreshed safely."""
@@ -149,6 +155,53 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
     if close.empty:
         raise SnapshotUpdateError("Yahoo Finance returned no completed closing sessions")
     return close
+
+
+def _benchmark_return(inception: str, price_as_of: str) -> float | None:
+    """Cumulative SPY return over the live window, or None if it cannot be measured.
+
+    A second request rather than another ticker on the holdings download: that one
+    asks for ``period="1mo"``, which stopped covering the live window almost as soon
+    as the account opened.  This one is anchored on the inception date, so the window
+    keeps working as the track record lengthens.
+
+    ``auto_adjust=True`` on purpose.  The account sweeps dividends into cash, so its
+    NAV is a total return; the published headline benchmark is likewise a
+    dividend-adjusted close.  Measuring against a price-only index would quietly book
+    SPY's dividend yield as our alpha.
+
+    Both ends are clamped to the book's own window.  The opening mark is the first
+    session on or after inception, which is what resolves an inception date that
+    falls on a weekend.  The closing mark is the last session on or before the day
+    the book was actually priced -- that keeps the two returns measured over
+    identical spans, and it also subsumes the incomplete-bar guard in
+    ``_download_closes``, because ``price_as_of`` is already a completed session.
+    """
+
+    raw = yf.download(
+        BENCHMARK_TICKER,
+        start=inception,
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+        threads=False,
+    )
+    closes = _extract_close(raw, [BENCHMARK_TICKER])
+    if BENCHMARK_TICKER not in closes.columns:
+        return None
+
+    series = closes[BENCHMARK_TICKER].dropna()
+    series = series.loc[series > 0.0]
+    opening = series.loc[series.index >= pd.Timestamp(inception)]
+    closing = series.loc[series.index <= pd.Timestamp(price_as_of)]
+    if opening.empty or closing.empty:
+        return None
+
+    first = float(opening.iloc[0])
+    last = float(closing.iloc[-1])
+    if first <= 0.0 or last <= 0.0:
+        return None
+    return round(last / first - 1.0, 8)
 
 
 def _session_prices(
@@ -325,6 +378,31 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
     live["days_live"] = len(curve)
     live["last_updated"] = price_as_of
 
+    # Caught here rather than left to main(): the book has already been remarked at
+    # this point, and losing a whole day of prices because Yahoo would not serve one
+    # extra symbol is a bad trade.  --require-update would also turn it into a red
+    # CI run for something that costs the page nothing.
+    benchmark: float | None = None
+    try:
+        benchmark = _benchmark_return(str(live["inception_date"]), price_as_of)
+    except Exception as exc:  # noqa: BLE001 - the price refresh outranks the benchmark
+        print(
+            f"benchmark refresh skipped: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+    # Null, never carried forward.  Pairing a stale benchmark with a fresh NAV does
+    # not produce a conservative alpha, it produces a wrong one -- the same reason
+    # the chart refuses to extend the SPY line across the gap where it runs out.
+    # The dashboard hides the live view when these are null, so the failure mode is
+    # a missing number rather than an invented one.
+    live["benchmark_return"] = benchmark
+    live["excess_return"] = (
+        None
+        if benchmark is None
+        else round(float(live["since_inception_return"]) - benchmark, 8)
+    )
+
     snapshot["as_of"] = price_as_of
     snapshot["generated_at"] = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -423,6 +501,23 @@ def validate(base: dict, updated: dict) -> None:
     for field in ("inception_date", "inception_nav", "rebase_factor"):
         if live[field] != base["live"][field]:
             raise SnapshotUpdateError(f"live.{field} was modified")
+
+    # The live view needs both numbers or neither: rendering a return with no
+    # benchmark beside it, or an alpha with nothing to attribute it to, is worse
+    # than not offering the view.
+    benchmark = live.get("benchmark_return")
+    excess = live.get("excess_return")
+    if (benchmark is None) != (excess is None):
+        raise SnapshotUpdateError(
+            "live.benchmark_return and live.excess_return must be set together"
+        )
+    if benchmark is not None:
+        implied = float(live["since_inception_return"]) - float(benchmark)
+        if abs(float(excess) - implied) > 1e-6:
+            raise SnapshotUpdateError(
+                f"live.excess_return {float(excess):.8f} is not "
+                f"since_inception_return - benchmark_return ({implied:.8f})"
+            )
 
     nav = float(live["nav"])
     cash = round(float(base["live"]["nav"]) - sum(float(p["value"]) for p in old_positions), 2)
