@@ -13,7 +13,10 @@ track.  Both are the wrong book: the dashboard publishes a 10-name small
 account.  That is the regression the validation gate below exists to prevent.
 
 Every certified section -- headline, the backtest/simulation/SPY curves, crash
-table, sector history, monthly returns, notes -- is carried through untouched.
+table, sector history, notes -- is carried through untouched.  ``monthly_returns``
+is frozen for every month the backtest covers; only the months the funded account
+has actually been running are rebuilt here, because those move every session and
+are the account's own marks rather than research output.
 The gate runs against the finished payload *before* anything is written, and any
 failure leaves the file on disk exactly as it was.
 
@@ -24,6 +27,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,10 +57,17 @@ FROZEN_TOP_LEVEL = (
     "headline",
     "crash_table",
     "sector_history",
-    "monthly_returns",
     "notes",
 )
 FROZEN_CURVES = ("backtest", "simulation", "spy")
+
+# ``monthly_returns`` is deliberately absent from FROZEN_TOP_LEVEL.  It is not
+# wholly frozen and not wholly writable: every month the backtest covers is
+# certified research output, while the months since the account was funded are
+# its own marks and move daily.  ``_validate_monthly_returns`` enforces that
+# split, and the boundary is read off ``live.inception_date`` rather than
+# hard-coded to a month that would silently rot.
+_MONTH_LABEL = re.compile(r"[0-9]{4}-[0-9]{2}")
 
 # Fields every position must carry.  The research pipeline also ships display
 # fields alongside them -- ``rationale`` today, something else tomorrow -- so the
@@ -157,8 +168,8 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
     return close
 
 
-def _benchmark_return(inception: str, price_as_of: str) -> float | None:
-    """Cumulative SPY return over the live window, or None if it cannot be measured.
+def _benchmark_series(inception: str, price_as_of: str) -> "pd.Series | None":
+    """SPY closes clamped to the book's own live window, or None if unavailable.
 
     A second request rather than another ticker on the holdings download: that one
     asks for ``period="1mo"``, which stopped covering the live window almost as soon
@@ -192,16 +203,102 @@ def _benchmark_return(inception: str, price_as_of: str) -> float | None:
 
     series = closes[BENCHMARK_TICKER].dropna()
     series = series.loc[series > 0.0]
-    opening = series.loc[series.index >= pd.Timestamp(inception)]
-    closing = series.loc[series.index <= pd.Timestamp(price_as_of)]
-    if opening.empty or closing.empty:
-        return None
+    series = series.loc[
+        (series.index >= pd.Timestamp(inception))
+        & (series.index <= pd.Timestamp(price_as_of))
+    ]
+    return None if series.empty else series
 
-    first = float(opening.iloc[0])
-    last = float(closing.iloc[-1])
+
+def _series_return(series: "pd.Series | None") -> float | None:
+    """Total return across a clamped close series, or None if it cannot be measured."""
+
+    if series is None or series.empty:
+        return None
+    first = float(series.iloc[0])
+    last = float(series.iloc[-1])
     if first <= 0.0 or last <= 0.0:
         return None
     return round(last / first - 1.0, 8)
+
+
+def _benchmark_return(inception: str, price_as_of: str) -> float | None:
+    """Cumulative SPY return over the live window, or None if it cannot be measured."""
+
+    return _series_return(_benchmark_series(inception, price_as_of))
+
+
+def _live_monthly_returns(
+    curve: list[dict],
+    inception_nav: float,
+    rebase_factor: float,
+    series: "pd.Series | None",
+) -> list[dict]:
+    """Month-by-month live returns for the heatmap tail.
+
+    The strategy leg comes off ``equity_curve.live``, whose values are NAV multiplied by
+    ``rebase_factor``.  That factor is a constant, so it cancels in every ratio and the
+    points are used as published -- the deposit anchor is simply scaled into the same
+    units to match.
+
+    The first live month is measured from the $10,000 deposit rather than from the first
+    mark: the opening mark is already a mark-to-market of a deployed book, so anchoring on
+    it erases the funding-day cost and overstates the account.  SPY is baselined on the
+    first session on or after inception, which is exactly how ``_benchmark_return``
+    measures it -- that is what makes these months compound back to
+    ``live.benchmark_return`` instead of drifting away from the live block.
+
+    Returns an empty list if any live month has no benchmark to sit against.  A strategy
+    cell with an invented SPY cell next to it is worse than a blank row.
+    """
+
+    if not curve or series is None or series.empty:
+        return []
+    anchor = float(inception_nav) * float(rebase_factor)
+    if anchor <= 0.0:
+        return []
+
+    # Both dicts keep the LAST observation of each month; the curve and the close
+    # series are already date-ascending.
+    nav_by_month: dict[str, float] = {}
+    for point in curve:
+        nav_by_month[str(point["d"])[:7]] = float(point["v"])
+    spy_by_month: dict[str, float] = {}
+    for stamp, close in series.items():
+        spy_by_month[stamp.strftime("%Y-%m")] = float(close)
+
+    rows: list[dict] = []
+    previous_nav = anchor
+    previous_spy = float(series.iloc[0])
+    for month in sorted(nav_by_month):
+        nav = nav_by_month[month]
+        spy_close = spy_by_month.get(month)
+        if spy_close is None or previous_spy <= 0.0 or previous_nav <= 0.0:
+            return []
+        rows.append(
+            {
+                "month": month,
+                "strategy": round(nav / previous_nav - 1.0, 6),
+                "spy": round(spy_close / previous_spy - 1.0, 6),
+                "partial": True,
+            }
+        )
+        previous_nav, previous_spy = nav, spy_close
+    return rows
+
+
+def _merge_monthly_returns(snapshot: dict, rows: list[dict]) -> None:
+    """Swap the live tail of ``monthly_returns`` in place, leaving the backtest alone."""
+
+    if not rows:
+        return
+    months = snapshot.get("monthly_returns")
+    if not isinstance(months, list):
+        return
+    floor = rows[0]["month"]
+    snapshot["monthly_returns"] = [
+        row for row in months if str(row.get("month", "")) < floor
+    ] + rows
 
 
 def _session_prices(
@@ -383,8 +480,10 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
     # extra symbol is a bad trade.  --require-update would also turn it into a red
     # CI run for something that costs the page nothing.
     benchmark: float | None = None
+    benchmark_series = None
     try:
-        benchmark = _benchmark_return(str(live["inception_date"]), price_as_of)
+        benchmark_series = _benchmark_series(str(live["inception_date"]), price_as_of)
+        benchmark = _series_return(benchmark_series)
     except Exception as exc:  # noqa: BLE001 - the price refresh outranks the benchmark
         print(
             f"benchmark refresh skipped: {type(exc).__name__}: {exc}",
@@ -403,6 +502,16 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
         else round(float(live["since_inception_return"]) - benchmark, 8)
     )
 
+    # Heatmap tail.  Rebuilt from the SAME close series the live block was measured
+    # against, so the grid and the hero card cannot drift apart -- one fetch, one
+    # baseline, two consumers.  The certified backtest months are untouched, and a
+    # missing benchmark leaves the whole section exactly as the research pipeline
+    # published it.
+    live_months = _live_monthly_returns(
+        curve, inception_nav, rebase_factor, benchmark_series
+    )
+    _merge_monthly_returns(snapshot, live_months)
+
     snapshot["as_of"] = price_as_of
     snapshot["generated_at"] = (
         datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -419,6 +528,7 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
         "cash": cash,
         "backfilled": written[:-1],
         "skipped": skipped,
+        "live_months": [row["month"] for row in live_months],
     }
     return snapshot, summary
 
@@ -430,6 +540,66 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
 
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _validate_monthly_returns(base: dict, updated: dict) -> None:
+    """Append-or-update only, and only from the live inception month forward.
+
+    Every month the backtest covers is certified research output and is frozen exactly as
+    if it were still listed in ``FROZEN_TOP_LEVEL``.  The months since the account was
+    funded are not research output -- they are its own marks, and they move every session
+    -- so the refresher owns that tail and nothing else.
+
+    The boundary is read off ``live.inception_date`` rather than hard-coded to a month
+    that would silently rot -- and off the BASE snapshot, not the updated one.  Reading it
+    from the payload under inspection would let a backdated inception move the floor and
+    unfreeze history underneath it.  ``validate`` does hold that field immutable, but it
+    checks later in the pass, so taking the floor from ``base`` keeps this gate correct
+    on its own rather than dependent on the order of the checks around it.
+    """
+
+    old = base.get("monthly_returns")
+    new = updated.get("monthly_returns")
+    if not isinstance(new, list) or not new:
+        raise SnapshotUpdateError("monthly_returns is missing or empty")
+    if not isinstance(old, list):
+        raise SnapshotUpdateError("base monthly_returns is missing or not a list")
+
+    floor = str(base["live"]["inception_date"])[:7]
+    as_of_month = str(updated["as_of"])[:7]
+
+    frozen_old = [row for row in old if str(row.get("month", "")) < floor]
+    frozen_new = [row for row in new if str(row.get("month", "")) < floor]
+    if _canonical(frozen_new) != _canonical(frozen_old):
+        raise SnapshotUpdateError(
+            f"Certified months before {floor} were modified "
+            f"({len(frozen_old)} -> {len(frozen_new)} rows)"
+        )
+
+    labels = [str(row.get("month", "")) for row in new]
+    if labels != sorted(labels):
+        raise SnapshotUpdateError("monthly_returns is not sorted by month")
+    if len(set(labels)) != len(labels):
+        raise SnapshotUpdateError("monthly_returns has duplicate months")
+
+    for row in new:
+        month = str(row.get("month", ""))
+        if not _MONTH_LABEL.fullmatch(month):
+            raise SnapshotUpdateError(f"monthly_returns has a malformed month {month!r}")
+        if month > as_of_month:
+            raise SnapshotUpdateError(
+                f"monthly_returns reaches {month}, past as_of {as_of_month}"
+            )
+        for field in ("strategy", "spy"):
+            value = row.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise SnapshotUpdateError(
+                    f"monthly_returns[{month}].{field} is not a number: {value!r}"
+                )
+            if not -1.0 < float(value) < 1.0:
+                raise SnapshotUpdateError(
+                    f"monthly_returns[{month}].{field} is out of range: {value!r}"
+                )
 
 
 def validate(base: dict, updated: dict) -> None:
@@ -444,6 +614,7 @@ def validate(base: dict, updated: dict) -> None:
     for key in FROZEN_TOP_LEVEL:
         if _canonical(updated[key]) != _canonical(base[key]):
             raise SnapshotUpdateError(f"Certified section '{key}' was modified")
+    _validate_monthly_returns(base, updated)
     for name in FROZEN_CURVES:
         if _canonical(updated["equity_curve"][name]) != _canonical(
             base["equity_curve"][name]

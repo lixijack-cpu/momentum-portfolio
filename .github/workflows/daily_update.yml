@@ -61,6 +61,13 @@ jobs:
       # exits 0 on every error and the run goes green while publishing nothing --
       # which is how a snapshot schema change stopped the dashboard for five days
       # without a single red tick.
+      # The gate is the only thing standing between a bad refresh and the published
+      # page, and monthly_returns is the one certified section the refresher may
+      # write to. Prove the boundary still holds before exercising it.
+      - name: Test snapshot gate
+        if: steps.schedule.outputs.run == 'true'
+        run: python test_snapshot_gate.py
+
       - name: Build updated snapshot
         if: steps.schedule.outputs.run == 'true'
         run: python build_snapshot_cloud.py --output portfolio_snapshot.json --require-update
@@ -90,8 +97,19 @@ jobs:
           live = d["live"]
           assert (live.get("benchmark_return") is None) == (live.get("excess_return") is None), \
               "live benchmark_return and excess_return must be set together"
+          # The heatmap has no recency check of its own, which is how it sat two
+          # months behind the hero card while every run went green. The tail is
+          # allowed to lag by one month (a new month opens before its first
+          # session is marked), never more.
+          months = [r["month"] for r in d["monthly_returns"]]
+          assert months == sorted(set(months)), "monthly_returns is unsorted or has duplicates"
+          y, m = divmod(int(months[-1][:4]) * 12 + int(months[-1][5:7]) - 1, 12)
+          ay, am = divmod(int(d["as_of"][:4]) * 12 + int(d["as_of"][5:7]) - 1, 12)
+          lag = (ay * 12 + am) - (y * 12 + m)
+          assert 0 <= lag <= 1, f"heatmap ends {months[-1]} but as_of is {d['as_of']}"
           print(f"ok: {n} holdings, cagr={d['headline']['cagr']}, "
-                f"sharpe={d['headline']['sharpe']}, as_of={d['as_of']}")
+                f"sharpe={d['headline']['sharpe']}, as_of={d['as_of']}, "
+                f"{len(months)} months to {months[-1]}")
           PY
 
       - name: Commit and push
