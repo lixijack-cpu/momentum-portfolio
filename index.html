@@ -770,14 +770,14 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <details>
       <summary>About This Strategy <span class="caret">▼</span></summary>
       <div class="about-body">
-        <p>A live, fully automated systematic equity framework I architected from scratch to independently research, backtest, and execute institutional-grade quantitative strategies. The system dynamically ranks a universe of ~1,500 U.S. equities using composite multi-factor signals (earnings momentum, valuation, and price momentum) protected by a macro-regime risk overlay.</p>
-        <p>The platform continuously operates three simultaneous execution environments:</p>
+        <p>A live, fully automated systematic equity research platform I architected from scratch — covering the full stack from raw data ingestion to public dashboard deployment. The core engine ranks ~1,500 U.S. equities monthly using a composite multi-factor signal: post-earnings announcement drift (SUE), earnings quality, valuation, and price momentum — all computed point-in-time to eliminate lookahead bias. A macro-regime risk overlay governs market exposure.</p>
+        <p>Three execution tracks run simultaneously, each certified on a 20-year out-of-sample walk-forward (2005–2026):</p>
         <ul style="margin: 0 0 var(--space-4) var(--space-5); line-height: 1.6;">
-          <li style="margin-bottom: var(--space-2);"><strong>Institutional Production:</strong> Flagship 104-stock model simulating a $5M AUM book. (20-year Backtest: 14.0% CAGR / Sharpe 0.94, outperforming the S&P 500 by +296 bps/yr).</li>
-          <li style="margin-bottom: var(--space-2);"><strong>Retail Execution:</strong> Concentrated 10-stock model mathematically optimized for low-capital constraints and retail broker limitations. (20-year Backtest: 17.1% CAGR).</li>
-          <li style="margin: 0;"><strong>Shadow Track:</strong> Experimental forward-testing laboratory for evaluating uncertified alpha signals strictly out-of-sample.</li>
+          <li style="margin-bottom: var(--space-2);"><strong>Retail (Live Paper Trading):</strong> Concentrated 10-stock model optimised for low-capital accounts with integer-share execution. Walk-forward: <strong>17.11% CAGR / Sharpe 0.921 / +607 bps/yr vs S&amp;P 500 / −29.6% max drawdown.</strong> Currently executing in a live $10,000 paper account.</li>
+          <li style="margin-bottom: var(--space-2);"><strong>Institutional:</strong> Flagship 104-stock equal-weighted model simulating a $5M AUM book. Walk-forward: <strong>14.00% CAGR / Sharpe 0.942 / +296 bps/yr vs S&amp;P 500 / −19.5% max month-end drawdown.</strong></li>
+          <li style="margin: 0;"><strong>Shadow:</strong> Forward-testing laboratory for candidate alpha signals evaluated strictly out-of-sample before promotion to the live book.</li>
         </ul>
-        <p>The entire end-to-end pipeline—from automated data ingestion, point-in-time signal generation, and pre-trade risk management, to live paper-trading and continuous GitHub Pages dashboard deployment—is built entirely in Python and executes autonomously every market close.</p>
+        <p>The full pipeline — automated CRSP/Compustat data ingestion, point-in-time factor scoring, pre-trade risk checks, nightly signal integrity monitoring, and continuous GitHub Pages dashboard deployment — is written entirely in Python and executes autonomously every market close.</p>
         <p id="about-method"></p>
       </div>
     </details>
