@@ -686,9 +686,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     </div>
   </section>
 
-  <div class="context-alert" id="live-context-banner" hidden>
-    <strong>Live Retail Strategy (10-Stock):</strong> This view tracks live out-of-sample trading for the retail paper account. Its certified 20-year backtest achieved a <strong>17.11% CAGR</strong> (+607 bps/yr vs S&amp;P 500) and a <strong>-29.6% Max Drawdown</strong>. Short-term volatility is a known characteristic of this concentrated 10-stock strategy.
-  </div>
+  <div class="context-alert" id="live-context-banner" hidden></div>
 
   <section class="card">
     <div class="section-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
@@ -1081,7 +1079,16 @@ function swapHeroCards(view) {
     .setAttribute('aria-pressed', String(view === 'backtest'));
   document.getElementById('sel-live')
     .setAttribute('aria-pressed', String(view === 'live'));
-  document.getElementById('live-context-banner').hidden = view !== 'live';
+  const banner = document.getElementById('live-context-banner');
+  banner.hidden = view !== 'live';
+  if (view === 'live' && s.headline) {
+    const h = s.headline;
+    const cagr = (h.cagr * 100).toFixed(2);
+    const bps = h.excess_vs_spy_bps;
+    const dd = (Math.abs(h.max_drawdown_daily) * 100).toFixed(1);
+    const signedBps = `${bps >= 0 ? '+' : ''}${esc(bps)}`;
+    banner.innerHTML = `<strong>Live Retail Strategy (10-Stock):</strong> This view tracks live out-of-sample trading for the retail paper account. Its certified 20-year backtest achieved a <strong>${cagr}% CAGR</strong> (${signedBps} bps/yr vs S&amp;P 500) and a <strong>-${dd}% Max Drawdown</strong>. Short-term volatility is a known characteristic of this concentrated 10-stock strategy.`;
+  }
 
   if (view === 'live') {
     const live = s.live;
