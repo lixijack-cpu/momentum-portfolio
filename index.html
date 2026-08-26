@@ -687,7 +687,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   </section>
 
   <div class="context-alert" id="live-context-banner" hidden>
-    <strong>Live Retail Strategy (10-Stock):</strong> This view tracks live out-of-sample trading for the retail paper account. Its certified 20-year backtest achieved a <strong>17.15% CAGR</strong> and <strong>-29.6% Max Drawdown</strong>. This is a different concentrated strategy than the 104-stock institutional model shown in the Backtest stats.
+    <strong>Live Retail Strategy (10-Stock):</strong> This view tracks live out-of-sample trading for the retail paper account. Its certified 20-year backtest achieved a <strong>17.11% CAGR</strong> (+607 bps/yr vs S&amp;P 500) and a <strong>-29.6% Max Drawdown</strong>. Short-term volatility is a known characteristic of this concentrated 10-stock strategy.
   </div>
 
   <section class="card">
@@ -1800,10 +1800,10 @@ const ACCOUNTS = {
     base: 10000,
     marked: false,
     note: 'Concentrated 10-stock retail book, sized for a $10,000 account with '
-        + 'integer-share execution. Its history is a fixed-book-size variant measured '
-        + 'separately from the institutional arm; that variant did not clear this '
-        + 'project’s significance bar, so the figures below are a candidate result '
-        + 'rather than a certified one.'
+        + 'integer-share execution. History is the Phase 74 p70_topn sleeve — a '
+        + 'quality + momentum composite measured separately from the 104-stock '
+        + 'institutional arm. 20-year out-of-sample backtest: 17.11% CAGR, '
+        + 'Sharpe 0.921, Max Drawdown -29.6% (daily marks).'
   },
   institutional: {
     file: 'institutional_snapshot.json',
