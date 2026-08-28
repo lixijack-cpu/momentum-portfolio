@@ -910,15 +910,91 @@ const money2 = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, m
 const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ESCAPES[c]);
 
-function tradingDaysSince(iso) {
-  const then = new Date(iso + 'T00:00:00Z');
-  const now = new Date();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const utcDateKey = d =>
+  `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+function nthWeekdayOfMonth(year, month, weekday, nth) {
+  const first = new Date(Date.UTC(year, month, 1));
+  const day = 1 + (7 + weekday - first.getUTCDay()) % 7 + (nth - 1) * 7;
+  return new Date(Date.UTC(year, month, day));
+}
+
+function lastWeekdayOfMonth(year, month, weekday) {
+  const last = new Date(Date.UTC(year, month + 1, 0));
+  const day = last.getUTCDate() - (7 + last.getUTCDay() - weekday) % 7;
+  return new Date(Date.UTC(year, month, day));
+}
+
+// Gregorian Easter (Meeus/Jones/Butcher), used to derive Good Friday.
+function easterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = (h + l - 7 * m + 114) % 31 + 1;
+  return new Date(Date.UTC(year, month, day));
+}
+
+function observedFixedHoliday(year, month, day) {
+  const holiday = new Date(Date.UTC(year, month, day));
+  if (holiday.getUTCDay() === 6) holiday.setUTCDate(holiday.getUTCDate() - 1);
+  if (holiday.getUTCDay() === 0) holiday.setUTCDate(holiday.getUTCDate() + 1);
+  return holiday;
+}
+
+function nyseHolidayKeys(year) {
+  const holidays = new Set();
+  const add = d => holidays.add(utcDateKey(d));
+  const newYear = new Date(Date.UTC(year, 0, 1));
+  // NYSE does not take the preceding Friday off when January 1 falls Saturday.
+  if (newYear.getUTCDay() === 0) newYear.setUTCDate(2);
+  add(newYear);
+  add(nthWeekdayOfMonth(year, 0, 1, 3));   // Martin Luther King Jr. Day
+  add(nthWeekdayOfMonth(year, 1, 1, 3));   // Washington's Birthday
+  add(new Date(easterSunday(year).getTime() - 2 * DAY_MS)); // Good Friday
+  add(lastWeekdayOfMonth(year, 4, 1));      // Memorial Day
+  if (year >= 2022) add(observedFixedHoliday(year, 5, 19)); // Juneteenth
+  add(observedFixedHoliday(year, 6, 4));    // Independence Day
+  add(nthWeekdayOfMonth(year, 8, 1, 1));    // Labor Day
+  add(nthWeekdayOfMonth(year, 10, 4, 4));   // Thanksgiving
+  add(observedFixedHoliday(year, 11, 25));  // Christmas
+  return holidays;
+}
+
+function newYorkDateKey(value) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(value);
+  const byType = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function tradingDaysSince(iso, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  if (!match) return 0;
+  const then = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+  const todayParts = newYorkDateKey(now).split('-').map(Number);
+  const today = new Date(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]));
+  if (then >= today) return 0;
+
   let days = 0;
   const cur = new Date(then);
-  while (cur < now) {
+  while (cur < today) {
     cur.setUTCDate(cur.getUTCDate() + 1);
-    const d = cur.getUTCDay();
-    if (d !== 0 && d !== 6) days++;
+    const weekday = cur.getUTCDay();
+    const holidays = nyseHolidayKeys(cur.getUTCFullYear());
+    if (weekday !== 0 && weekday !== 6 && !holidays.has(utcDateKey(cur))) days++;
   }
   return days;
 }
@@ -1188,7 +1264,7 @@ function renderPill(s) {
     dot.title = `Marked ${s.as_of} · remarked at each monthly rebalance, not daily`;
   } else {
     const days = tradingDaysSince(s.as_of);
-    dot.classList.add(days < 2 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
+    dot.classList.add(days === 0 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
     dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
   }
 
