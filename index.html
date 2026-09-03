@@ -526,6 +526,32 @@ select.field{cursor:pointer;padding-right:10px}
 .livestat .v{font-weight:600;font-size:1.24rem;margin-top:5px;font-variant-numeric:tabular-nums}
 .disclaimer{color:var(--muted);font-size:.74rem;margin-top:16px;line-height:1.6}
 
+/* ---------- sector conviction ---------- */
+.sector-conviction-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;
+}
+.sector-conviction-card{
+  min-width:0;background:var(--hover-wash);border:1px solid var(--border);
+  border-radius:12px;padding:16px;transition:background .18s,border-color .18s,transform .18s;
+}
+.sector-conviction-card:hover{
+  background:var(--hover-wash-strong);border-color:var(--border-strong);transform:translateY(-1px);
+}
+.sector-conviction-card h3{
+  color:var(--ink);font-size:.82rem;letter-spacing:.04em;margin-bottom:11px;
+}
+.sector-conviction-card ul{list-style:none;display:grid;gap:8px}
+.sector-conviction-card li{
+  display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;align-items:baseline;
+  padding-top:8px;border-top:1px solid var(--row-border);
+}
+.sector-conviction-card li:first-child{padding-top:0;border-top:0}
+.conviction-ticker{color:var(--blue);font-size:.78rem;font-weight:600;letter-spacing:.03em}
+.conviction-name{
+  color:var(--ink-2);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sector-conviction-disclaimer{font-style:italic;margin-bottom:18px;margin-top:0}
+
 /* ---------- about ---------- */
 details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:var(--card-shadow)}
 summary{
@@ -764,6 +790,16 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <div id="holdings"></div>
     <p class="disclaimer" id="hold-disclaimer">Actual current positions may differ. Reporting lag
       applied per standard institutional practice.</p>
+  </section>
+
+  <section class="card" id="sector-conviction-section" hidden>
+    <div class="section-head">
+      <h2>Quantitative Sector Conviction</h2>
+      <p>Leading names within each sector from the latest monthly factor ranking.</p>
+    </div>
+    <p class="disclaimer sector-conviction-disclaimer"><em>High-factor-alignment equities identified by our
+      proprietary screening process. This is a watchlist, not active holdings.</em></p>
+    <div class="sector-conviction-grid" id="sector-conviction"></div>
   </section>
 
   <section>
@@ -1750,6 +1786,52 @@ function renderHoldings(s) {
   }
 }
 
+function renderSectorConviction(s) {
+  const section = document.getElementById('sector-conviction-section');
+  const grid = document.getElementById('sector-conviction');
+  const conviction = s && s.sector_conviction;
+  grid.replaceChildren();
+
+  if (!conviction || typeof conviction !== 'object' || Array.isArray(conviction)) {
+    section.hidden = true;
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  Object.keys(conviction).sort().forEach(sector => {
+    const names = conviction[sector];
+    if (!sector || !Array.isArray(names) || names.length === 0) return;
+
+    const card = document.createElement('article');
+    card.className = 'sector-conviction-card';
+    const heading = document.createElement('h3');
+    heading.textContent = sector;
+    card.appendChild(heading);
+
+    const list = document.createElement('ul');
+    names.slice(0, 5).forEach(position => {
+      if (!position || typeof position.ticker !== 'string' ||
+          typeof position.name !== 'string' || !position.ticker || !position.name) return;
+      const row = document.createElement('li');
+      const ticker = document.createElement('span');
+      ticker.className = 'conviction-ticker';
+      ticker.textContent = position.ticker;
+      const name = document.createElement('span');
+      name.className = 'conviction-name';
+      name.title = position.name;
+      name.textContent = position.name;
+      row.append(ticker, name);
+      list.appendChild(row);
+    });
+    if (list.children.length === 0) return;
+    card.appendChild(list);
+    fragment.appendChild(card);
+  });
+
+  grid.appendChild(fragment);
+  section.hidden = grid.children.length === 0;
+}
+
 /* ---------- theme toggle ----------
    The charts are repainted by mutating their existing options and calling update('none')
    rather than by rebuilding them. Destroying and re-creating would be simpler to write and
@@ -2333,6 +2415,7 @@ async function loadModelData(account, {initial = false} = {}) {
     renderSectors(snap);
     renderHeatmap(snap);
     renderHoldings(snap);
+    renderSectorConviction(snap);
   } catch (err) {
     console.error('[dashboard] render failed', err);
     fail('Dashboard updating… Please check back shortly.');

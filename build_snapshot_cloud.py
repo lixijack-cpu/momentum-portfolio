@@ -46,9 +46,17 @@ EXPECTED_TOP_LEVEL = (
     "live",
     "crash_table",
     "sector_history",
+    "sector_conviction",
     "monthly_returns",
     "holdings",
     "notes",
+)
+
+# Snapshots published before the conviction panel shipped remain refreshable until the
+# research builder replaces them. A price-only refresh may preserve one of these two
+# exact shapes; it may never add or remove the section itself.
+LEGACY_TOP_LEVEL = tuple(
+    key for key in EXPECTED_TOP_LEVEL if key != "sector_conviction"
 )
 
 # Certified research output.  Nothing here may modify these.
@@ -57,6 +65,7 @@ FROZEN_TOP_LEVEL = (
     "headline",
     "crash_table",
     "sector_history",
+    "sector_conviction",
     "notes",
 )
 FROZEN_CURVES = ("backtest", "simulation", "spy")
@@ -602,18 +611,68 @@ def _validate_monthly_returns(base: dict, updated: dict) -> None:
                 )
 
 
+def _validate_sector_conviction(snapshot: dict) -> None:
+    """Enforce the score-free public contract before a snapshot can be written."""
+
+    payload = snapshot.get("sector_conviction")
+    if not isinstance(payload, dict) or not payload:
+        raise SnapshotUpdateError("sector_conviction is missing or empty")
+
+    seen_tickers: set[str] = set()
+    for sector, rows in payload.items():
+        if not isinstance(sector, str) or not sector.strip():
+            raise SnapshotUpdateError("sector_conviction has a blank sector")
+        if not isinstance(rows, list) or not 1 <= len(rows) <= 5:
+            raise SnapshotUpdateError(
+                f"sector_conviction[{sector!r}] must contain one to five names"
+            )
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != {"ticker", "name"}:
+                raise SnapshotUpdateError(
+                    f"sector_conviction[{sector!r}] exposes fields other than ticker/name"
+                )
+            ticker = row["ticker"]
+            name = row["name"]
+            if (
+                not isinstance(ticker, str)
+                or not ticker.strip()
+                or not isinstance(name, str)
+                or not name.strip()
+            ):
+                raise SnapshotUpdateError(
+                    f"sector_conviction[{sector!r}] has a blank ticker or name"
+                )
+            if ticker in seen_tickers:
+                raise SnapshotUpdateError(
+                    f"sector_conviction repeats ticker {ticker!r}"
+                )
+            seen_tickers.add(ticker)
+
+
 def validate(base: dict, updated: dict) -> None:
     """Refuse to publish anything that is not a pure price refresh of ``base``."""
 
-    if tuple(updated) != EXPECTED_TOP_LEVEL:
+    expected_shape = (
+        EXPECTED_TOP_LEVEL if "sector_conviction" in base else LEGACY_TOP_LEVEL
+    )
+    if tuple(base) != expected_shape:
+        raise SnapshotUpdateError(
+            "Base top-level keys changed.\n  expected: "
+            f"{list(expected_shape)}\n  got:      {list(base)}"
+        )
+    if tuple(updated) != expected_shape:
         raise SnapshotUpdateError(
             "Top-level keys changed.\n  expected: "
-            f"{list(EXPECTED_TOP_LEVEL)}\n  got:      {list(updated)}"
+            f"{list(expected_shape)}\n  got:      {list(updated)}"
         )
 
     for key in FROZEN_TOP_LEVEL:
+        if key == "sector_conviction" and key not in base:
+            continue
         if _canonical(updated[key]) != _canonical(base[key]):
             raise SnapshotUpdateError(f"Certified section '{key}' was modified")
+    if "sector_conviction" in updated:
+        _validate_sector_conviction(updated)
     _validate_monthly_returns(base, updated)
     for name in FROZEN_CURVES:
         if _canonical(updated["equity_curve"][name]) != _canonical(
@@ -730,8 +789,16 @@ def validate(base: dict, updated: dict) -> None:
 
     if live["days_live"] != len(curve):
         raise SnapshotUpdateError("live.days_live disagrees with the live curve length")
-    expected_v = round(nav * float(live["rebase_factor"]), 2)
-    if abs(float(curve[-1]["v"]) - expected_v) > 0.02:
+    rebase_factor = float(live["rebase_factor"])
+    expected_v = round(nav * rebase_factor, 2)
+    # The research snapshot stores NAV to cents and the plotting factor to six
+    # decimals, while the plotted point is calculated from their unrounded sources.
+    # Bound exactly that propagation instead of requiring an impossible two-cent
+    # identity when the factor is around 26x.
+    rounding_tolerance = (
+        0.005 * abs(rebase_factor) + 0.0000005 * abs(nav) + 0.011
+    )
+    if abs(float(curve[-1]["v"]) - expected_v) > rounding_tolerance:
         raise SnapshotUpdateError("The last live point is not NAV * rebase_factor")
     if str(curve[-1]["d"]) != str(updated["as_of"]):
         raise SnapshotUpdateError("as_of disagrees with the last live point")

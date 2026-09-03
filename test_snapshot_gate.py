@@ -281,7 +281,10 @@ def test_published_snapshot_passes_the_full_gate() -> None:
     base = json.loads(SNAPSHOT.read_text())
     updated = copy.deepcopy(base)
     floor = str(base["live"]["inception_date"])[:7]
-    if str(base["monthly_returns"][-1]["month"]) < floor:
+    if (
+        str(base["monthly_returns"][-1]["month"]) < floor
+        and str(base["as_of"]) <= "2026-08-21"
+    ):
         updated["monthly_returns"] = base["monthly_returns"] + [
             tail("2026-07", 0.017026, 0.010743),
             tail("2026-08", 0.022011, 0.025019),
@@ -294,6 +297,55 @@ def test_published_snapshot_passes_the_full_gate() -> None:
         tampered["monthly_returns"][100], strategy=0.123456
     )
     rejects(base, tampered, "Certified months")
+
+
+def test_sector_conviction_contract_is_score_free() -> None:
+    clean = {
+        "sector_conviction": {
+            "Technology": [
+                {"ticker": "AAA", "name": "Alpha Systems Inc"},
+                {"ticker": "BBB", "name": "Beta Systems Inc"},
+            ]
+        }
+    }
+    b._validate_sector_conviction(clean)
+
+    leaked = copy.deepcopy(clean)
+    leaked["sector_conviction"]["Technology"][0]["FinalScore"] = 0.99
+    try:
+        b._validate_sector_conviction(leaked)
+    except b.SnapshotUpdateError as exc:
+        assert "other than ticker/name" in str(exc), str(exc)
+        return
+    raise AssertionError("expected a raw-score field to be rejected")
+
+
+def test_sector_conviction_is_frozen_by_full_gate() -> None:
+    if not SNAPSHOT.is_file():
+        print("      (skipped: no portfolio_snapshot.json on disk)")
+        return
+    legacy = json.loads(SNAPSHOT.read_text())
+    if "sector_conviction" in legacy:
+        base = copy.deepcopy(legacy)
+    else:
+        base = {}
+        for key, value in legacy.items():
+            base[key] = value
+            if key == "sector_history":
+                base["sector_conviction"] = {
+                    "Technology": [{"ticker": "AAA", "name": "Alpha Systems Inc"}]
+                }
+    updated = copy.deepcopy(base)
+    b.validate(base, updated)
+
+    sector = next(iter(updated["sector_conviction"]))
+    updated["sector_conviction"][sector][0]["name"] = "Altered Name"
+    try:
+        b.validate(base, updated)
+    except b.SnapshotUpdateError as exc:
+        assert "sector_conviction" in str(exc), str(exc)
+        return
+    raise AssertionError("expected sector_conviction mutation to be rejected")
 
 
 def main() -> int:

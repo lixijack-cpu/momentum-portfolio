@@ -62,8 +62,13 @@ jobs:
           d = json.load(open("portfolio_snapshot.json"))
           expected = ["schema_version", "generated_at", "as_of", "headline",
                       "equity_curve", "live", "crash_table", "sector_history",
-                      "monthly_returns", "holdings", "notes"]
+                      "sector_conviction", "monthly_returns", "holdings", "notes"]
           assert list(d) == expected, f"top-level keys are {list(d)}"
+          conviction = d["sector_conviction"]
+          assert conviction, "sector_conviction is empty"
+          assert all(1 <= len(rows) <= 5 for rows in conviction.values())
+          assert all(set(row) == {"ticker", "name"}
+                     for rows in conviction.values() for row in rows)
           assert d["headline"].get("cagr") and d["headline"].get("sharpe"), "headline is empty"
           n = len(d["holdings"]["positions"])
           # The dashboard publishes the small account. Anything near 100 names means
