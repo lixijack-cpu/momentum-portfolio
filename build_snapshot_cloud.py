@@ -105,10 +105,9 @@ MIN_PRICE_COVERAGE = 0.8
 # curve cannot balloon the published history in a single pass.
 MAX_BACKFILL_SESSIONS = 25
 
-# The live-window benchmark.  This is the ONLY place it can be computed: the
-# research repo's SPY parquet ends 2026-07-13 and ``equity_curve.spy`` stops at
-# the last marked month, both of which predate the live inception -- so the
-# published snapshot carries no SPY observation inside the live window at all.
+# The cloud refreshes the live-window benchmark from Yahoo when available. The
+# research-side payload also carries a value measured from its local SPY cache,
+# which remains the fallback when this provider-specific request fails.
 BENCHMARK_TICKER = "SPY"
 
 
@@ -499,11 +498,12 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
             file=sys.stderr,
         )
 
-    # Null, never carried forward.  Pairing a stale benchmark with a fresh NAV does
-    # not produce a conservative alpha, it produces a wrong one -- the same reason
-    # the chart refuses to extend the SPY line across the gap where it runs out.
-    # The dashboard hides the live view when these are null, so the failure mode is
-    # a missing number rather than an invented one.
+    if benchmark is None:
+        benchmark = live.get("benchmark_return")
+
+    # The research-side builder measures this window from its local SPY cache. Preserve
+    # that value when Yahoo drops only the benchmark request; excess return is still
+    # recomputed below from the newly marked NAV rather than copied from the payload.
     live["benchmark_return"] = benchmark
     live["excess_return"] = (
         None
