@@ -1682,8 +1682,11 @@ function renderHeatmap(s) {
 
 function renderHoldings(s) {
   const h = s.holdings;
+  const targetDate = h.target_as_of || h.as_of || '—';
+  const baseDate = h.last_rebalance ? ` · Base factor date ${h.last_rebalance}` : '';
+  const filingDate = h.latest_filing_date ? ` · Latest SEC filing ${h.latest_filing_date}` : '';
   document.getElementById('hold-sub').textContent =
-    `As of ${h.last_rebalance || h.as_of} · T+30 reporting lag · Updated monthly`;
+    `Model scan ${targetDate}${baseDate}${filingDate}`;
 
   const live = s.live || {};
   const scale = CFG.scale;
