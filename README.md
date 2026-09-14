@@ -1,6 +1,6 @@
 # Systematic Equity Strategy
 
-**Live Dashboard:** [lixijack-cpu.github.io/quant-fund](https://lixijack-cpu.github.io/quant-fund)
+**Live Dashboard:** [lixijack-cpu.github.io/momentum-portfolio](https://lixijack-cpu.github.io/momentum-portfolio/)
 
 A systematic long-only US equity strategy ranking stocks on earnings surprise relative to
 analyst consensus (67%) and valuation (33%), combined at selection with an alternative-data
