@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -297,6 +298,21 @@ def test_published_snapshot_passes_the_full_gate() -> None:
         tampered["monthly_returns"][100], strategy=0.123456
     )
     rejects(base, tampered, "Certified months")
+
+
+def test_holdings_ui_contract() -> None:
+    """Exercise the browser renderer against holdings and conviction decoys."""
+
+    test_file = Path(__file__).with_name("test_holdings_ui.js")
+    completed = subprocess.run(
+        ["node", str(test_file)],
+        cwd=test_file.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
+    assert completed.returncode == 0, output
 
 
 def test_sector_conviction_contract_is_score_free() -> None:

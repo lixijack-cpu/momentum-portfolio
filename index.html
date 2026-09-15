@@ -501,6 +501,10 @@ select.field{cursor:pointer;padding-right:10px}
 .holding:hover{background:var(--hover-wash)}
 .tkr{font-weight:600;font-size:.94rem}
 .co{color:var(--muted);font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.position-meta{
+  color:var(--ink-2);font-size:.72rem;margin-top:3px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
 .chip{
   font-size:.68rem;padding:3px 10px;border-radius:999px;white-space:nowrap;
   border:1px solid currentColor;font-weight:500;
@@ -1681,12 +1685,38 @@ function renderHeatmap(s) {
 }
 
 function renderHoldings(s) {
-  const h = s.holdings;
-  const targetDate = h.target_as_of || h.as_of || '—';
-  const baseDate = h.target_as_of && h.last_rebalance ? ` · Base factor date ${h.last_rebalance}` : '';
+  const h = s?.holdings;
+  const positions = s?.holdings?.positions;
+  if (!h || typeof h !== 'object' || !Array.isArray(positions)) {
+    throw new TypeError('snapshot.holdings.positions must be an array');
+  }
+  const stringFields = ['ticker', 'name', 'sector', 'rationale'];
+  const numericFields = ['weight', 'value', 'shares', 'price'];
+  positions.forEach((position, index) => {
+    if (!position || typeof position !== 'object') {
+      throw new TypeError(`holdings.positions[${index}] must be an object`);
+    }
+    stringFields.forEach(field => {
+      if (typeof position[field] !== 'string') {
+        throw new TypeError(`holdings.positions[${index}].${field} must be a string`);
+      }
+    });
+    numericFields.forEach(field => {
+      if (typeof position[field] !== 'number' || !Number.isFinite(position[field])) {
+        throw new TypeError(`holdings.positions[${index}].${field} must be a finite number`);
+      }
+    });
+    if (!Number.isInteger(position.shares)) {
+      throw new TypeError(`holdings.positions[${index}].shares must be an integer`);
+    }
+  });
+
+  const pricedDate = h.as_of || '—';
+  const rebalanceDate = h.last_rebalance || '—';
+  const targetDate = h.target_as_of ? ` · Model scan ${h.target_as_of}` : '';
   const filingDate = h.latest_filing_date ? ` · Latest SEC filing ${h.latest_filing_date}` : '';
   document.getElementById('hold-sub').textContent =
-    `Model scan ${targetDate}${baseDate}${filingDate}`;
+    `Priced as of ${pricedDate} · Last rebalance ${rebalanceDate}${targetDate}${filingDate}`;
 
   const live = s.live || {};
   const scale = CFG.scale;
@@ -1707,7 +1737,7 @@ function renderHoldings(s) {
   // (Chemicals, Energy, Consumer Durables). Append those in sorted order rather than
   // dropping them to grey -- it was hitting 10 of 104 production names.
   const known = (s.sector_history && s.sector_history.sectors) || [];
-  const extra = [...new Set(h.positions.map(p => p.sector))]
+  const extra = [...new Set(positions.map(p => p.sector))]
     .filter(name => name && known.indexOf(name) < 0)
     .sort();
   const order = known.concat(extra);
@@ -1722,7 +1752,7 @@ function renderHoldings(s) {
   // reading it. Production is 104 names at one identical weight, so the comparator
   // returns 0 throughout and the original order survives -- Array#sort has been
   // required to be stable since ES2019.
-  const sorted = [...h.positions].sort((a, b) => (Number(b.weight) || 0) - (Number(a.weight) || 0));
+  const sorted = [...positions].sort((a, b) => (Number(b.weight) || 0) - (Number(a.weight) || 0));
   const weights = sorted.map(p => Number(p.weight) || 0);
   // Guard the divisor: an empty book would otherwise make Math.max return -Infinity and
   // every bar width NaN.
@@ -1744,6 +1774,8 @@ function renderHoldings(s) {
         `<div class="tkr">${esc(p.ticker)}</div>` +
         `<div class="co-col" style="display:flex;flex-direction:column;justify-content:center;overflow:hidden;">` +
           `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
+          `<div class="position-meta">${p.shares.toLocaleString('en-US')} shares · ` +
+            `${money2(p.price)} price · ${money2(p.value)} value</div>` +
           (p.rationale ? `<div class="rationale" style="font-size:0.75rem;color:var(--muted);margin-top:2px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.rationale)}</div>` : '') +
         `</div>` +
         `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
