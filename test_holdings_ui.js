@@ -147,3 +147,89 @@ assert.throws(
 );
 
 console.log('ok: Current Portfolio renders FAF, NGVT, MLI from holdings.positions only');
+
+const historyStart = source.indexOf('const HISTORY_PAGE = 250;');
+const historyEnd = source.indexOf('\nfunction populateHistoryMonths()', historyStart);
+assert.notEqual(historyStart, -1, 'Trade Journal helpers are missing from index.html');
+assert.notEqual(historyEnd, -1, 'Trade Journal helper boundary is missing from index.html');
+
+const historySource = source.slice(historyStart, historyEnd);
+assert.match(
+  historySource,
+  /rows\.filter\(r => r\.status === 'IN' \|\| r\.status === 'OUT'\)/,
+  'Trade Journal must include IN and OUT rows explicitly',
+);
+
+const historyElements = new Map();
+const historyElement = id => {
+  if (!historyElements.has(id)) historyElements.set(id, new FakeElement());
+  return historyElements.get(id);
+};
+historyElement('history-month').value = '';
+historyElement('history-ticker').value = '';
+
+const historyContext = vm.createContext({
+  document: {
+    getElementById: historyElement,
+    createDocumentFragment: () => new FakeElement({fragment: true}),
+    createElement: () => new FakeElement(),
+  },
+  money2,
+  esc: context.esc,
+});
+vm.runInContext(historySource, historyContext, {filename: 'index.html#TradeJournal'});
+
+const tradeFixtureRows = [
+  {
+    date: '2026-09-02', ticker: 'QLYS', shares: 5, price: 177.01,
+    value: 885.05, ret: 0, pnl: 0, status: 'IN',
+  },
+  {
+    date: '2026-09-03', ticker: 'QLYS', shares: 6, price: 174.35,
+    value: 1046.10, ret: -1.5, pnl: -13.30, status: 'HOLD',
+  },
+  {
+    date: '2026-09-10', ticker: 'QLYS', shares: 6, price: 161.57,
+    value: 969.42, ret: -5.14, pnl: -52.68, status: 'OUT',
+  },
+];
+for (let i = 1; i <= 17; i += 1) {
+  tradeFixtureRows.push({
+    date: `2026-08-${String(i).padStart(2, '0')}`,
+    ticker: `EXIT${String(i).padStart(2, '0')}`,
+    shares: i,
+    price: 100 + i,
+    value: i * (100 + i),
+    ret: -i / 10,
+    pnl: -i,
+    status: 'OUT',
+  });
+}
+
+const tradeFixture = {live_daily: {}};
+const historyFields = {
+  dates: 'date', tickers: 'ticker', shares: 'shares', prices: 'price', values: 'value',
+  daily_return_pct: 'ret', daily_pnl: 'pnl', status: 'status',
+};
+for (const [arrayName, field] of Object.entries(historyFields)) {
+  tradeFixture.live_daily[arrayName] = tradeFixtureRows.map(row => row[field]);
+}
+historyContext.tradeFixture = tradeFixture;
+vm.runInContext(
+  'const decoded = decodeHistory(tradeFixture);'
+    + ' historyRows = decoded.rows; historyRows.isWeight = decoded.isWeight; renderHistory();',
+  historyContext,
+);
+
+const historyHtml = historyElement('history-body').children.map(row => row.innerHTML);
+assert.equal(historyHtml.length, 19, 'one BUY and 18 SELL rows should be visible');
+assert.equal(historyHtml.filter(html => html.includes('>SELL</span>')).length, 18);
+assert.equal(historyHtml.filter(html => html.includes('>BUY</span>')).length, 1);
+assert.doesNotMatch(historyHtml.join('\n'), />HOLD<|status-hold/);
+
+const qlysRows = historyHtml.filter(html => html.includes('>QLYS</td>'));
+assert.equal(qlysRows.length, 2, 'QLYS BUY and SELL must both be displayed');
+assert.ok(qlysRows.some(html => html.includes('2026-09-02') && html.includes('status-in">BUY')));
+assert.ok(qlysRows.some(html => html.includes('2026-09-10') && html.includes('status-out">SELL')));
+
+console.log('ok: Trade Journal renders QLYS BUY/SELL, 18 SELL rows, and excludes HOLD');

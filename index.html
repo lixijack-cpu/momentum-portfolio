@@ -830,7 +830,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <div class="section-head history-head">
         <div>
           <h2>Trade Journal</h2>
-          <p>Every position, entry date, exit date, and daily return. Results only — no strategy signals disclosed.</p>
+          <p>Every live entry and exit, with execution-day returns. Results only — no strategy signals disclosed.</p>
         </div>
         <span class="status-badge status-snapshot" id="history-book" hidden></span>
       </div>
@@ -2192,9 +2192,14 @@ function decodeHistory(payload) {
     }
   });
 
-  rows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
-  return {rows, isWeight, book: payload.book || '', notes: payload.notes || ''};
+  /* HOLD rows are needed above to calculate running P&L and holding periods, but the
+     Trade Journal is an execution log. Publish entries and exits only. */
+  const tradeRows = rows.filter(r => r.status === 'IN' || r.status === 'OUT');
+  tradeRows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  return {rows: tradeRows, isWeight, book: payload.book || '', notes: payload.notes || ''};
 }
+
+const historyAction = status => status === 'IN' ? 'BUY' : status === 'OUT' ? 'SELL' : status;
 
 function historyFiltered() {
   const month = document.getElementById('history-month').value;
@@ -2239,7 +2244,7 @@ function renderHistory() {
       `<td>${esc(r.date)}</td>`
       + `<td class="ticker-cell">${esc(r.ticker)}</td>`
       + `<td><span class="status-badge status-${esc(r.status.toLowerCase())}">`
-      + `${esc(r.status)}</span></td>`
+      + `${esc(historyAction(r.status))}</span></td>`
       + `<td class="num">${esc(histSize(r.size, isWeight))}</td>`
       + `<td class="num">${r.price == null ? '—' : esc(money2(r.price))}</td>`
       + `<td class="num ${retClass}">${esc(histPct(r.ret))}</td>`
