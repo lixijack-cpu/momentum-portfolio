@@ -556,6 +556,31 @@ select.field{cursor:pointer;padding-right:10px}
 }
 .sector-conviction-disclaimer{font-style:italic;margin-bottom:18px;margin-top:0}
 
+/* ---------- regime banner ---------- */
+#regime-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(128,128,128,0.12);
+  color: var(--muted);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+#regime-banner[data-state="risk_on"] { background: linear-gradient(90deg, rgba(16,185,129,0.10) 0%, transparent 50%); }
+#regime-banner[data-state="risk_off"] { background: linear-gradient(90deg, rgba(239,68,68,0.10) 0%, transparent 50%); }
+.rb-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+[data-state="risk_on"] .rb-dot { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.6); }
+[data-state="risk_off"] .rb-dot { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.6); }
+.rb-label { font-weight:700; text-transform:uppercase; font-size:11px; }
+[data-state="risk_on"] .rb-label { color:#10b981; }
+[data-state="risk_off"] .rb-label { color:#ef4444; }
+.rb-sep { opacity:0.3; margin:0 4px; }
+.rb-tag { background:rgba(128,128,128,0.12); border-radius:4px; padding:2px 7px; font-size:11px; }
+
 /* ---------- about ---------- */
 details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:var(--card-shadow)}
 summary{
@@ -668,6 +693,23 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     </button>
   </div>
 </header>
+
+<div id="regime-banner" data-state="risk_on" hidden>
+  <span class="rb-dot"></span>
+  <span class="rb-label" id="rb-state">RISK ON</span>
+  <span class="rb-sep">·</span>
+  <span id="rb-exposure">98.5% deployed</span>
+  <span class="rb-sep">|</span>
+  <span>Equity <span id="rb-eq-wt" class="rb-tag">75%</span></span>
+  <span class="rb-sep">·</span>
+  <span>Macro ETF <span id="rb-macro-wt" class="rb-tag">25%</span></span>
+  <span class="rb-sep">|</span>
+  <span>Macro Longs: <span id="rb-longs" class="rb-tag">UUP · DBA · USO</span></span>
+  <span class="rb-sep">·</span>
+  <span>Macro Cash: <span id="rb-cash" class="rb-tag">TLT · IEF · GLD</span></span>
+  <span class="rb-sep">|</span>
+  <span id="rb-asof" style="opacity:0.5">as of —</span>
+</div>
 
 <main hidden id="main">
 
@@ -1319,6 +1361,29 @@ function renderPill(s) {
     document.getElementById('pill-nav').textContent = 'Awaiting first mark';
     document.getElementById('pill-sub').textContent = `Data as of ${s.as_of}`;
   }
+}
+
+function renderRegimeBanner(snap) {
+  const banner = document.getElementById('regime-banner');
+  if (!banner) return;
+  const r = snap && snap.regime;
+  if (!r) { banner.hidden = true; return; }
+  banner.dataset.state = r.state || 'risk_on';
+  banner.hidden = false;
+  document.getElementById('rb-state').textContent =
+    (r.state || 'risk_on').replace('_', ' ').toUpperCase();
+  document.getElementById('rb-exposure').textContent =
+    r.gross_exposure ? (+((r.gross_exposure)*100).toFixed(1)) + '% deployed' : '';
+  document.getElementById('rb-eq-wt').textContent =
+    r.equity_weight ? Math.round(r.equity_weight*100)+'%' : '—';
+  document.getElementById('rb-macro-wt').textContent =
+    r.macro_etf_weight ? Math.round(r.macro_etf_weight*100)+'%' : '—';
+  document.getElementById('rb-longs').textContent =
+    r.macro_longs && r.macro_longs.length ? r.macro_longs.join(' · ') : 'None';
+  document.getElementById('rb-cash').textContent =
+    r.macro_cash && r.macro_cash.length ? r.macro_cash.join(' · ') : '—';
+  document.getElementById('rb-asof').textContent =
+    r.as_of ? 'as of ' + r.as_of : '';
 }
 
 function renderEquity(s) {
@@ -2450,6 +2515,7 @@ async function loadModelData(account, {initial = false} = {}) {
     SNAP = snap;
     renderHeadline(snap);
     renderPill(snap);
+    renderRegimeBanner(snap);
     renderEquity(snap);
     renderCrash(snap);
     renderSectors(snap);
