@@ -1352,10 +1352,8 @@ function renderPill(s) {
 
   const live = s.live;
   if (live && live.nav != null) {
-    const isPositive = live.since_inception_return != null && live.since_inception_return > 0;
-    document.getElementById('pill-nav').textContent = isPositive
-      ? `${money2(live.nav * CFG.scale)} · ${signedPct(live.since_inception_return)}`
-      : `${money2(live.nav * CFG.scale)} · Building track record…`;
+    document.getElementById('pill-nav').textContent =
+      `${money2(live.nav * CFG.scale)} · ${signedPct(live.since_inception_return)}`;
     document.getElementById('pill-sub').textContent = CFG.marked
       ? `Marked ${s.as_of} · ${live.days_live} day${live.days_live === 1 ? '' : 's'} live`
       : `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
@@ -1791,9 +1789,8 @@ function renderHoldings(s) {
   document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav * scale) : '—';
   const retEl = document.getElementById('l-ret');
   if (live.since_inception_return != null) {
-    const isPositive = live.since_inception_return > 0;
-    retEl.textContent = isPositive ? signedPct(live.since_inception_return) : 'Building track record…';
-    retEl.style.color = isPositive ? 'var(--green)' : 'var(--muted)';
+    retEl.textContent = signedPct(live.since_inception_return);
+    retEl.style.color = live.since_inception_return >= 0 ? 'var(--green)' : 'var(--red)';
   } else {
     retEl.textContent = '—';
   }
