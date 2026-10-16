@@ -50,6 +50,7 @@ EXPECTED_TOP_LEVEL = (
     "monthly_returns",
     "holdings",
     "notes",
+    "regime",
 )
 
 # Snapshots published before the conviction panel shipped remain refreshable until the
@@ -67,6 +68,7 @@ FROZEN_TOP_LEVEL = (
     "sector_history",
     "sector_conviction",
     "notes",
+    "regime",
 )
 FROZEN_CURVES = ("backtest", "simulation", "spy")
 

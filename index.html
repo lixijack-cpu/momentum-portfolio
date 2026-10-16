@@ -1251,6 +1251,7 @@ function swapHeroCards(view) {
   if (view === 'live') {
     const live = s.live;
     const bps = Math.round(live.excess_return * 10000);
+    const iwmBps = live.excess_return_iwm != null ? Math.round(live.excess_return_iwm * 10000) : null;
     setCard('k-cagr', {
       label: 'Live Return',
       value: signedPct(live.since_inception_return),
@@ -1258,28 +1259,22 @@ function swapHeroCards(view) {
       hue: signHue(live.since_inception_return)
     });
     setCard('k-sharpe', {
+      label: 'S&P 500 (SPY)',
+      value: signedPct(live.benchmark_return),
+      foot: `Alpha: ${bps >= 0 ? '+' : ''}${esc(bps)} bps · SPY total return`,
+      hue: 'v-amber'
+    });
+    setCard('k-dd', {
+      label: 'Russell 2000 (IWM)',
+      value: live.benchmark_return_iwm != null ? signedPct(live.benchmark_return_iwm) : '—',
+      foot: iwmBps != null ? `Alpha: ${iwmBps >= 0 ? '+' : ''}${esc(iwmBps)} bps · Small-cap benchmark` : 'SPY-only comparison',
+      hue: 'v-amber'
+    });
+    setCard('k-edge', {
       label: 'Time Horizon',
       html: `${esc(live.days_live)}<span class="unit">days</span>`,
       foot: 'Trading sessions since inception',
       hue: 'v-violet'
-    });
-    setCard('k-dd', {
-      label: 'S&P 500 Return',
-      value: signedPct(live.benchmark_return),
-      // Total return, matching a NAV that sweeps dividends into cash. A price-only
-      // index here would book SPY's yield as our alpha.
-      foot: 'SPY total return over the identical window',
-      // Deliberately not sign-coloured. This is the yardstick, not our result; painting
-      // it green or red would read as a verdict on the benchmark.
-      hue: 'v-amber'
-    });
-    setCard('k-edge', {
-      label: 'Live Alpha',
-      html: `${bps >= 0 ? '+' : ''}${esc(bps)}<span class="unit">bps</span>`,
-      // Reads correctly at either sign. "Outperformance" under a negative number is
-      // the kind of caption that makes a page look like it is spinning its own results.
-      foot: 'Live return less S&P 500, same window',
-      hue: signHue(bps)
     });
     return;
   }
