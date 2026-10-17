@@ -655,6 +655,30 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 </style>
 </head>
 <body>
+<!-- BEGIN temporary Jonah banner -->
+<aside id="temporary-jonah-banner" hidden aria-label="Temporary test banner" style="position:relative;z-index:101;text-align:center;padding:12px 20px;background:#111827;">
+  <span style="display:inline-block;font:800 clamp(24px,4vw,40px)/1.25 system-ui,sans-serif;letter-spacing:.02em;color:#facc15;background:linear-gradient(90deg,#ff5263,#ffaf42,#ffe65a,#65e58a,#60c8ff,#a99aff,#f78dd8);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Jonah conrad</span>
+</aside>
+<script id="temporary-jonah-timer">
+(() => {
+  const startsAt = 1792227593000;
+  const expiresAt = 1792227713000;
+  const banner = document.getElementById('temporary-jonah-banner');
+  const timerScript = document.currentScript;
+  const update = () => {
+    const now = Date.now();
+    if (now >= expiresAt) {
+      banner.remove();
+      timerScript.remove();
+      return;
+    }
+    banner.hidden = now < startsAt;
+    setTimeout(update, Math.min(1000, (now < startsAt ? startsAt : expiresAt) - now));
+  };
+  update();
+})();
+</script>
+<!-- END temporary Jonah banner -->
 
 <div id="state">
   <div class="spinner" id="spinner"></div>
