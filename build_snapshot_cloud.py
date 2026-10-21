@@ -175,6 +175,28 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
         close = close.loc[close.index.date < now_et.date()]
     if close.empty:
         raise SnapshotUpdateError("Yahoo Finance returned no completed closing sessions")
+
+    # Post-close fallback: Yahoo's historical endpoint sometimes returns an
+    # all-NaN row for today immediately after 16:00 ET while its servers
+    # finalise the bar.  The LaunchAgent fires at 16:30 ET, so this window is
+    # real.  Fill the last row via fast_info when that happens so the daily
+    # push is never blocked by a transient Yahoo delay.
+    if (
+        now_et.weekday() < 5
+        and now_et.strftime("%H:%M") >= "16:00"
+        and not close.empty
+        and close.iloc[-1].isna().all()
+        and close.index[-1].date() == now_et.date()
+    ):
+        for t in tickers:
+            try:
+                fi = yf.Ticker(t).fast_info
+                price = fi.get("last_price") or fi.get("lastPrice")
+                if price and float(price) > 0:
+                    close.loc[close.index[-1], t] = float(price)
+            except Exception:  # noqa: BLE001
+                pass  # leave NaN; the main loop will mark the position stale
+
     return close
 
 
@@ -212,6 +234,33 @@ def _benchmark_series(inception: str, price_as_of: str) -> "pd.Series | None":
         return None
 
     series = closes[BENCHMARK_TICKER].dropna()
+    series = series.loc[series > 0.0]
+    series = series.loc[
+        (series.index >= pd.Timestamp(inception))
+        & (series.index <= pd.Timestamp(price_as_of))
+    ]
+    return None if series.empty else series
+
+
+def _benchmark_series_for(
+    ticker: str, inception: str, price_as_of: str
+) -> "pd.Series | None":
+    """Generic version of ``_benchmark_series`` for any index ETF (e.g. IWM).
+
+    Uses ``auto_adjust=True`` for total-return consistency.
+    """
+    raw = yf.download(
+        ticker,
+        start=inception,
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+        threads=False,
+    )
+    closes = _extract_close(raw, [ticker])
+    if ticker not in closes.columns:
+        return None
+    series = closes[ticker].dropna()
     series = series.loc[series > 0.0]
     series = series.loc[
         (series.index >= pd.Timestamp(inception))
@@ -511,6 +560,27 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
         None
         if benchmark is None
         else round(float(live["since_inception_return"]) - benchmark, 8)
+    )
+
+    # IWM (Russell 2000) secondary benchmark — used by the hero card to show
+    # performance vs. small-cap index.  Same window, same total-return basis.
+    benchmark_iwm: float | None = None
+    try:
+        benchmark_iwm = _series_return(
+            _benchmark_series_for("IWM", str(live["inception_date"]), price_as_of)
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"IWM benchmark refresh skipped: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+    if benchmark_iwm is None:
+        benchmark_iwm = live.get("benchmark_return_iwm")
+    live["benchmark_return_iwm"] = benchmark_iwm
+    live["excess_return_iwm"] = (
+        None
+        if benchmark_iwm is None
+        else round(float(live["since_inception_return"]) - benchmark_iwm, 8)
     )
 
     # Heatmap tail.  Rebuilt from the SAME close series the live block was measured
