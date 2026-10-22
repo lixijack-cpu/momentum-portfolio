@@ -884,7 +884,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <div class="section-head history-head">
         <div>
           <h2>Trade Journal</h2>
-          <p>Every live entry and exit, with execution-day returns. Results only — no strategy signals disclosed.</p>
+          <p>Every live entry and exit, with execution-day returns. Logs initial entries (BUY) and complete exits (SELL). Ongoing position resizing (rebalance additions and trims) is maintained directly in the portfolio ledger and reflected on Current Portfolio without creating redundant journal entries.</p>
         </div>
         <span class="status-badge status-snapshot" id="history-book" hidden></span>
       </div>
@@ -925,6 +925,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <button type="button" class="show-all" id="history-more" hidden></button>
 
       <p class="disclaimer" id="history-note"></p>
+      <p class="disclaimer" style="margin-top:6px">Execution note: Only initial entries (BUY) and complete liquidations (SELL) generate journal entries. Position resizing and rebalance share adjustments are tracked in the execution ledger and updated on Current Portfolio to prevent log overhead.</p>
     </section>
   </div><!-- /#view-journal -->
 
