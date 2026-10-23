@@ -58,6 +58,7 @@ const element = id => {
   if (!elements.has(id)) elements.set(id, new FakeElement());
   return elements.get(id);
 };
+const money = value => '$' + Math.round(value).toLocaleString('en-US');
 const money2 = value => '$' + value.toLocaleString('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -71,6 +72,7 @@ const context = vm.createContext({
     createDocumentFragment: () => new FakeElement({fragment: true}),
     createElement: () => new FakeElement(),
   },
+  money,
   money2,
   signedPct: value => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`,
   pct: (value, places = 2) => `${(value * 100).toFixed(places)}%`,
@@ -145,6 +147,35 @@ assert.throws(
   /holdings\.positions\[0\]\.price must be a finite number/,
   'every displayed position must satisfy the holdings position schema',
 );
+
+// Institutional book (target weights, shares: null)
+const instFixture = structuredClone(fixture);
+instFixture.holdings.positions = [
+  position('BMY', 'Bristol Myers Squibb Co', 'Healthcare', 0.00864, 92.29, null, 61.12, 'Selected for strong earnings surprise'),
+];
+context.CFG = {scale: 500, base: 5_000_000};
+context.renderHoldings(instFixture);
+const instRows = element('holdings').children;
+assert.equal(instRows.length, 1);
+assert.ok(instRows[0].innerHTML.includes('$61.12 price'));
+assert.ok(instRows[0].innerHTML.includes('$46,145.00 value'));
+assert.ok(!instRows[0].innerHTML.includes('shares'));
+
+// Shadow book (target weights, shares: null, price: null)
+const shadowFixture = structuredClone(fixture);
+shadowFixture.holdings.positions = [
+  position('KO', 'Coca Cola Co', 'Consumer NonDurables', 0.039674, 401.71, null, null, 'Selected by quantitative model'),
+];
+context.CFG = {scale: 500, base: 5_000_000};
+context.renderHoldings(shadowFixture);
+const shadowRows = element('holdings').children;
+assert.equal(shadowRows.length, 1);
+assert.ok(shadowRows[0].innerHTML.includes('$200,855.00 value'));
+assert.ok(!shadowRows[0].innerHTML.includes('shares'));
+assert.ok(!shadowRows[0].innerHTML.includes('price'));
+
+// Reset CFG
+context.CFG = {scale: 1, base: 10_000};
 
 console.log('ok: Current Portfolio renders FAF, NGVT, MLI from holdings.positions only');
 

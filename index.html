@@ -1764,7 +1764,6 @@ function renderHoldings(s) {
     throw new TypeError('snapshot.holdings.positions must be an array');
   }
   const stringFields = ['ticker', 'name', 'sector', 'rationale'];
-  const numericFields = ['weight', 'value', 'shares', 'price'];
   positions.forEach((position, index) => {
     if (!position || typeof position !== 'object') {
       throw new TypeError(`holdings.positions[${index}] must be an object`);
@@ -1774,13 +1773,16 @@ function renderHoldings(s) {
         throw new TypeError(`holdings.positions[${index}].${field} must be a string`);
       }
     });
-    numericFields.forEach(field => {
+    for (const field of ['weight', 'value']) {
       if (typeof position[field] !== 'number' || !Number.isFinite(position[field])) {
         throw new TypeError(`holdings.positions[${index}].${field} must be a finite number`);
       }
-    });
-    if (!Number.isInteger(position.shares)) {
+    }
+    if (position.shares === undefined || (position.shares !== null && !Number.isInteger(position.shares))) {
       throw new TypeError(`holdings.positions[${index}].shares must be an integer`);
+    }
+    if (position.price === undefined || (position.price !== null && (typeof position.price !== 'number' || !Number.isFinite(position.price)))) {
+      throw new TypeError(`holdings.positions[${index}].price must be a finite number`);
     }
   });
 
@@ -1841,14 +1843,20 @@ function renderHoldings(s) {
     sorted.slice(0, limit).forEach(p => {
       const c = colorFor(p.sector);
       const w = Number(p.weight) || 0;
+      const metaParts = [];
+      if (p.shares != null) metaParts.push(`${p.shares.toLocaleString('en-US')} shares`);
+      if (p.price != null) metaParts.push(`${money2(p.price)} price`);
+      if (p.value != null) metaParts.push(`${money2(p.value * scale)} value`);
+      const metaHtml = metaParts.length > 0
+        ? `<div class="position-meta">${metaParts.join(' · ')}</div>`
+        : '';
       const row = document.createElement('div');
       row.className = 'holding';
       row.innerHTML =
         `<div class="tkr">${esc(p.ticker)}</div>` +
         `<div class="co-col" style="display:flex;flex-direction:column;justify-content:center;overflow:hidden;">` +
           `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
-          `<div class="position-meta">${p.shares.toLocaleString('en-US')} shares · ` +
-            `${money2(p.price)} price · ${money2(p.value)} value</div>` +
+          metaHtml +
           (p.rationale ? `<div class="rationale" style="font-size:0.75rem;color:var(--muted);margin-top:2px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.rationale)}</div>` : '') +
         `</div>` +
         `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
@@ -2378,6 +2386,16 @@ function exportHistoryCsv() {
   URL.revokeObjectURL(url);
 }
 
+function resolveAssetUrl(file) {
+  let path = window.location.pathname || '/';
+  if (/\.[a-zA-Z0-9]+$/.test(path)) {
+    path = path.replace(/\/[^\/]+$/, '/');
+  } else if (!path.endsWith('/')) {
+    path = path + '/';
+  }
+  return path + file;
+}
+
 async function loadHistory(account) {
   const skeleton = document.getElementById('history-skeleton');
   const book = document.getElementById('history-book');
@@ -2405,7 +2423,7 @@ async function loadHistory(account) {
     document.getElementById('history-empty').hidden = true;
     document.getElementById('history-more').hidden = true;
     try {
-      const res = await fetch('./' + file, {cache: 'no-store'});
+      const res = await fetch(resolveAssetUrl(file) + '?v=' + Date.now(), {cache: 'no-store'});
       if (!res.ok) throw new Error('HTTP ' + res.status);
       payload = await res.json();
       HISTORY_CACHE[account] = payload;
@@ -2491,7 +2509,7 @@ async function loadModelData(account, {initial = false} = {}) {
 
   let snap;
   try {
-    const res = await fetch('./' + ACCOUNTS[account].file, {cache: 'no-store'});
+    const res = await fetch(resolveAssetUrl(ACCOUNTS[account].file) + '?v=' + Date.now(), {cache: 'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     snap = await res.json();
   } catch (err) {
