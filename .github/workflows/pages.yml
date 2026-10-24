@@ -23,6 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install snapshot validation dependencies
+        run: pip install pandas yfinance
+      - name: Verify snapshot before deployment
+        run: python test_snapshot_gate.py && node test_holdings_ui.js
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

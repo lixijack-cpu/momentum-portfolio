@@ -96,6 +96,7 @@ const position = (ticker, name, sector, weight, value, shares, price, rationale)
 const fixture = {
   holdings: {
     as_of: '2026-09-15',
+    price_as_of: '2026-09-15',
     last_rebalance: '2026-05-31',
     target_as_of: '2026-09-15',
     latest_filing_date: '2026-08-06',
@@ -173,6 +174,14 @@ assert.equal(shadowRows.length, 1);
 assert.ok(shadowRows[0].innerHTML.includes('$200,855.00 value'));
 assert.ok(!shadowRows[0].innerHTML.includes('shares'));
 assert.ok(!shadowRows[0].innerHTML.includes('price'));
+
+shadowFixture.holdings.price_as_of = null;
+context.renderHoldings(shadowFixture);
+assert.match(element('hold-sub').textContent, /Priced as of unavailable/);
+instFixture.holdings.price_as_of = '2026-09-14';
+context.renderHoldings(instFixture);
+assert.match(element('hold-sub').textContent, /Priced as of 2026-09-14/);
+assert.doesNotMatch(source, /remarked at each monthly rebalance|only updated monthly/);
 
 // Reset CFG
 context.CFG = {scale: 1, base: 10_000};

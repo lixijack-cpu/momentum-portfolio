@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import re
 import sys
 from datetime import datetime, timezone
@@ -171,6 +172,7 @@ def _download_closes(tickers: list[str]) -> pd.DataFrame:
     # It is not a closing price yet and makes repeated same-day runs non-idempotent.
     # Today's row becomes eligible only once the regular session has actually ended.
     now_et = pd.Timestamp.now(tz="America/New_York")
+    close = close.loc[close.index.date <= now_et.date()]
     if now_et.weekday() < 5 and now_et.strftime("%H:%M") < "16:00":
         close = close.loc[close.index.date < now_et.date()]
     if close.empty:
@@ -426,6 +428,85 @@ def _session_nav(positions: list[dict], prices: dict[str, float], cash: float) -
 # ---------------------------------------------------------------------------
 
 
+def _number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise SnapshotUpdateError(f"{label} must be a finite number")
+    return float(value)
+
+
+def validate_input(base: dict) -> float:
+    """Check the input mark before any market request; return its explicit/legacy cash."""
+    live, holdings = base["live"], base["holdings"]
+    nav = _number(live["nav"], "live.nav")
+    if nav <= 0:
+        raise SnapshotUpdateError("live.nav must be positive")
+    mark = live.get("last_updated")
+    if not mark or holdings.get("as_of") != mark or base.get("as_of") != mark:
+        raise SnapshotUpdateError("Input holdings date must equal live.last_updated and as_of")
+    if holdings.get("price_as_of", mark) != mark:
+        raise SnapshotUpdateError("Input price_as_of must equal live.last_updated")
+    tickers = set()
+    total = 0.0
+    for p in holdings["positions"]:
+        if p["ticker"] in tickers:
+            raise SnapshotUpdateError("Input contains duplicate tickers")
+        tickers.add(p["ticker"])
+        shares = _number(p["shares"], "shares")
+        price = _number(p["price"], "price")
+        value = _number(p["value"], "value")
+        if min(shares, price, value) <= 0 or shares != int(shares):
+            raise SnapshotUpdateError("Input shares/price/value must be positive; shares must be integer")
+        if abs(value - round(shares * price, 2)) > .011:
+            raise SnapshotUpdateError("Input value does not equal shares * price")
+        total += value
+    cash = _number(live["cash"], "live.cash") if "cash" in live else round(nav - total, 2)
+    if cash < 0 or ("cash" not in live and cash > .15 * nav):
+        raise SnapshotUpdateError("Legacy cash must be within 0 to 15% of NAV; explicit cash cannot be negative")
+    if abs(total + cash - nav) > .05:
+        raise SnapshotUpdateError("Input positions + cash do not reconcile to NAV")
+    curve = base["equity_curve"]["live"]
+    factor = _number(live["rebase_factor"], "rebase_factor")
+    if factor <= 0 or not curve or curve[-1]["d"] != mark:
+        raise SnapshotUpdateError("Input curve must end on live.last_updated with a positive rebase_factor")
+    tolerance = .005 * factor + .0000005 * nav + .011
+    if abs(_number(curve[-1]["v"], "curve value") - nav * factor) > tolerance:
+        raise SnapshotUpdateError("Input curve tail does not equal NAV * rebase_factor")
+    return cash
+
+
+def _observed_prices(closes: pd.DataFrame, positions: list[dict], mark: str) -> dict[str, float]:
+    """Require a complete observed close on the base date (or preceding weekend close)."""
+    window = closes.loc[closes.index <= pd.Timestamp(mark)]
+    if window.empty:
+        raise SnapshotUpdateError(f"No independent prices for base mark {mark}")
+    row = window.iloc[-1]
+    if (pd.Timestamp(mark) - window.index[-1]).days > 3:
+        raise SnapshotUpdateError(f"Independent prices are stale for {mark}")
+    result = {}
+    for p in positions:
+        value = float(row.get(p["ticker"], float("nan")))
+        if not math.isfinite(value) or value <= 0:
+            raise SnapshotUpdateError(f"Missing independent base close for {p['ticker']} on {mark}")
+        result[p["ticker"]] = value
+    return result
+
+
+def _verify_legacy_cash(base: dict, closes: pd.DataFrame, cash: float) -> None:
+    """Residual arithmetic alone is circular: require independent marks and continuity."""
+    positions, live = base["holdings"]["positions"], base["live"]
+    prices = _observed_prices(closes, positions, live["last_updated"])
+    if abs(_session_nav(positions, prices, cash) - live["nav"]) > .50:
+        raise SnapshotUpdateError("Legacy input positions disagree with observed base closes")
+    curve = base["equity_curve"]["live"]
+    if len(curve) < 2:
+        raise SnapshotUpdateError("Legacy cash has no prior mark for independent reconciliation")
+    previous = curve[-2]
+    previous_prices = _observed_prices(closes, positions, previous["d"])
+    previous_nav = float(previous["v"]) / float(live["rebase_factor"])
+    if abs(_session_nav(positions, previous_prices, cash) - previous_nav) > .50:
+        raise SnapshotUpdateError("Legacy cash discontinuity; rebuild from the ledger with explicit cash")
+
+
 def update_snapshot(base: dict) -> tuple[dict, dict]:
     """Return a price-refreshed copy of ``base`` plus a summary of what moved."""
 
@@ -445,11 +526,12 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
     rebase_factor = float(live["rebase_factor"])
     inception_nav = float(live["inception_nav"])
 
-    # Weights do not sum to 1: the account holds a cash residual.  It is not
-    # invested, so it rides through untouched while the equity is remarked.
-    cash = round(base_nav - sum(float(p["value"]) for p in positions), 2)
+    cash = validate_input(base)
 
     closes = _download_closes([str(p["ticker"]) for p in positions])
+    if "cash" not in live:
+        _verify_legacy_cash(base, closes, cash)
+    base_prices = _observed_prices(closes, positions, live["last_updated"])
 
     # Live curve: fill every completed session the curve is missing, replace
     # today's point on a re-run, and refuse to walk backwards into already
@@ -529,7 +611,12 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
         position["weight"] = round(float(position["value"]) / nav, 8)
 
     holdings["as_of"] = price_as_of  # last_rebalance is owned by the research pipeline
+    holdings["price_as_of"] = price_as_of
+    implied_move = sum(float(p["shares"]) * (p["price"] - base_prices[p["ticker"]]) for p in positions)
+    if abs(nav - base_nav - implied_move) > .50:
+        raise SnapshotUpdateError("NAV change disagrees with holdings-implied price move by more than $0.50")
     live["nav"] = nav
+    live["cash"] = cash
     live["since_inception_return"] = round(nav / inception_nav - 1.0, 8)
     live["days_live"] = len(curve)
     live["last_updated"] = price_as_of
@@ -822,7 +909,14 @@ def validate(base: dict, updated: dict) -> None:
             )
 
     nav = float(live["nav"])
-    cash = round(float(base["live"]["nav"]) - sum(float(p["value"]) for p in old_positions), 2)
+    cash = validate_input(base)
+    validate_input(updated)
+    if _number(live.get("cash"), "live.cash") != cash:
+        raise SnapshotUpdateError("Cloud refresh changed cash despite having no trades")
+    implied_move = sum(float(old["shares"]) * (float(new["price"]) - float(old["price"]))
+                       for old, new in zip(old_positions, new_positions))
+    if abs(nav - float(base["live"]["nav"]) - implied_move) > .50:
+        raise SnapshotUpdateError("NAV change disagrees with holdings-implied price move")
     expected_nav = sum(float(p["value"]) for p in new_positions) + cash
     if abs(nav - expected_nav) > 0.02:
         raise SnapshotUpdateError(

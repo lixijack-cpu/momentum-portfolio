@@ -17,7 +17,9 @@ import copy
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import build_snapshot_cloud as b
 
@@ -362,6 +364,150 @@ def test_sector_conviction_is_frozen_by_full_gate() -> None:
         assert "sector_conviction" in str(exc), str(exc)
         return
     raise AssertionError("expected sector_conviction mutation to be rejected")
+
+
+def funded_fixture() -> dict:
+    """Small offline book with the incident's exact NAV and cash."""
+    result = json.loads(SNAPSHOT.read_text())
+    result["as_of"] = "2026-10-23"
+    result["live"].update(nav=10711.61, cash=595.29, last_updated="2026-10-23",
+                          days_live=2, rebase_factor=2, inception_nav=10000,
+                          inception_date="2026-10-22", since_inception_return=.071161,
+                          benchmark_return=None, excess_return=None,
+                          benchmark_return_iwm=None, excess_return_iwm=None)
+    result["equity_curve"]["live"] = [dict(d="2026-10-22", v=21252.8), dict(d="2026-10-23", v=21423.22)]
+    result["holdings"].update(as_of="2026-10-23", price_as_of="2026-10-23", positions=[
+        dict(ticker="AAA", name="Alpha", sector="Tech", shares=100, price=101.1632,
+             value=10116.32, weight=10116.32 / 10711.61, rationale="Fixture")])
+    result["monthly_returns"] = [r for r in result["monthly_returns"] if r["month"] < "2026-10"]
+    return result
+
+
+def refresh_offline(base, *, future=False):
+    import pandas as pd
+    dates = ["2026-10-22", "2026-10-23"] + (["2026-10-26"] if future else [])
+    prices = [100.3111, 101.1632] + ([102.0] if future else [])
+    closes = pd.DataFrame({"AAA": prices}, index=pd.to_datetime(dates))
+    series = pd.Series([100., 101.], index=pd.to_datetime(["2026-10-22", dates[-1]]))
+    with patch.object(b, "_download_closes", return_value=closes), \
+         patch.object(b, "_benchmark_series", return_value=series), \
+         patch.object(b, "_benchmark_series_for", return_value=series):
+        return b.update_snapshot(base)[0]
+
+
+def test_consistent_input_passes_same_day_and_next_session_refresh():
+    for future in (False, True):
+        base = funded_fixture()
+        updated = refresh_offline(base, future=future)
+        b.validate(base, updated)
+        assert updated["live"]["cash"] == 595.29
+        assert updated["live"]["nav"] == (10795.29 if future else 10711.61)
+        assert base["live"]["nav"] == 10711.61, "refresh mutated its input"
+
+
+def test_stale_positions_correct_nav_fails_before_download():
+    base = funded_fixture()
+    base["holdings"]["positions"][0].update(price=98.6917, value=9869.17)
+    with patch.object(b, "_download_closes", side_effect=AssertionError("must reject before fetching")):
+        try:
+            b.update_snapshot(base)
+        except b.SnapshotUpdateError as exc:
+            assert "Input positions + cash" in str(exc), str(exc)
+        else:
+            raise AssertionError("incident input was accepted")
+
+
+def test_legacy_stale_positions_are_rejected_by_observed_closes():
+    base = funded_fixture()
+    del base["live"]["cash"]
+    base["holdings"]["positions"][0].update(price=98.6917, value=9869.17)
+    try:
+        refresh_offline(base)
+    except b.SnapshotUpdateError as exc:
+        assert "observed base closes" in str(exc), str(exc)
+        return
+    raise AssertionError("legacy incident input was accepted")
+
+
+def test_already_corrupted_legacy_cash_is_rejected():
+    base = funded_fixture()
+    del base["live"]["cash"]
+    base["live"]["nav"] = 10958.76
+    base["equity_curve"]["live"][-1]["v"] = 10958.76 * 2
+    try:
+        refresh_offline(base)
+    except b.SnapshotUpdateError as exc:
+        assert "cash discontinuity" in str(exc), str(exc)
+        return
+    raise AssertionError("phantom cash passed legacy continuity")
+
+
+def test_legacy_consistent_input_gets_explicit_cash():
+    base = funded_fixture()
+    del base["live"]["cash"]
+    updated = refresh_offline(base)
+    b.validate(base, updated)
+    assert updated["live"]["cash"] == 595.29
+
+
+def test_cash_discontinuity_rejected_even_when_output_reconciles():
+    base = funded_fixture()
+    updated = refresh_offline(base)
+    updated["live"]["cash"] += 1
+    updated["live"]["nav"] += 1
+    updated["equity_curve"]["live"][-1]["v"] += 2
+    try:
+        b.validate(base, updated)
+    except b.SnapshotUpdateError as exc:
+        assert "changed cash" in str(exc), str(exc)
+        return
+    raise AssertionError("cash discontinuity passed")
+
+
+def test_invalid_cash_and_legacy_cash_bounds_rejected():
+    for cash in (-1, float("nan"), float("inf"), None):
+        base = funded_fixture()
+        base["live"]["cash"] = cash
+        try:
+            b.validate_input(base)
+        except b.SnapshotUpdateError:
+            continue
+        raise AssertionError(f"accepted invalid cash {cash}")
+    base = funded_fixture()
+    del base["live"]["cash"]
+    base["holdings"]["positions"][0].update(value=8000, price=80)
+    try:
+        b.validate_input(base)
+    except b.SnapshotUpdateError as exc:
+        assert "15%" in str(exc), str(exc)
+        return
+    raise AssertionError("accepted excessive legacy cash")
+
+
+def test_correct_cash_cannot_hide_stale_prices_and_nav():
+    base = funded_fixture()
+    base["holdings"]["positions"][0].update(value=9869.17, price=98.6917)
+    base["live"]["nav"] = 10464.46
+    base["equity_curve"]["live"][-1]["v"] = 10464.46 * 2
+    try:
+        refresh_offline(base)
+    except b.SnapshotUpdateError as exc:
+        assert "holdings-implied" in str(exc), str(exc)
+        return
+    raise AssertionError("stale mark with a fresh date was accepted")
+
+
+def test_failed_refresh_preserves_output_file():
+    base = funded_fixture()
+    base["holdings"]["positions"][0].update(value=9869.17, price=98.6917)
+    with tempfile.TemporaryDirectory() as directory:
+        source, destination = Path(directory) / "bad.json", Path(directory) / "published.json"
+        source.write_text(json.dumps(base))
+        destination.write_text("previous published bytes\n")
+        with patch.object(sys, "argv", ["builder", "--input", str(source), "--output", str(destination), "--require-update"]), \
+             patch.object(b, "_download_closes", side_effect=AssertionError("network forbidden")):
+            assert b.main() == 1
+        assert destination.read_text() == "previous published bytes\n"
 
 
 def main() -> int:

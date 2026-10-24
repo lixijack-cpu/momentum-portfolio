@@ -79,6 +79,10 @@ jobs:
           # The live hero view needs both numbers or neither. Yahoo dropping SPY is a
           # tolerated outcome (the view hides itself); half a comparison is not.
           live = d["live"]
+          assert abs(live["nav"] - sum(p["value"] for p in d["holdings"]["positions"]) - live["cash"]) < 0.05, \
+              "NAV does not reconcile to positions plus explicit cash"
+          assert d["equity_curve"]["live"][-1]["v"] == round(live["nav"] * live["rebase_factor"], 2), \
+              "last curve point does not equal NAV * rebase_factor"
           assert (live.get("benchmark_return") is None) == (live.get("excess_return") is None), \
               "live benchmark_return and excess_return must be set together"
           # The heatmap has no recency check of its own, which is how it sat two

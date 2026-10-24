@@ -735,9 +735,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   <div id="view-overview">
 
   <!-- Swaps the four cards below between the certified backtest window and the live
-       account. Hidden entirely when the loaded book carries no live benchmark, which is
-       every book except retail: the marked books are only repriced at the monthly
-       rebalance, and the cloud refresher never touches them. -->
+       account. Hidden when the loaded book carries no live benchmark. -->
   <div class="chart-tools hero-tools" id="hero-tools">
     <div class="toggle" role="group" aria-label="Hero metrics">
       <button type="button" id="sel-backtest" aria-pressed="true">Backtest Stats</button>
@@ -1227,10 +1225,7 @@ function setCard(slot, {label, value, html, foot, hue}) {
   document.getElementById(`${slot}-foot`).textContent = foot;
 }
 
-/* Only the retail book carries these: the marked books are repriced at the monthly
-   rebalance and never pass through the cloud refresher, so they have no benchmark over
-   the live window at all. A live return with nothing to compare it against is not a view
-   worth offering, so the selector hides rather than showing half a comparison. */
+/* Daily marks are published for all books; a live comparison needs a benchmark. */
 const hasLiveBenchmark = s =>
   !!s && !!s.live && s.live.nav != null && s.live.benchmark_return != null;
 
@@ -1349,22 +1344,17 @@ function renderHeadline(s) {
 
 function renderPill(s) {
   const dot = document.getElementById('dot');
-  if (CFG.marked) {
-    dot.classList.add('marked');
-    dot.title = `Marked ${s.as_of} · remarked at each monthly rebalance, not daily`;
-  } else {
-    const days = tradingDaysSince(s.as_of);
-    dot.classList.add(days === 0 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
-    dot.title = `Data as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
-  }
+  const days = tradingDaysSince(s.as_of);
+  dot.classList.remove('marked', 'fresh', 'warn', 'stale');
+  dot.classList.add(days === 0 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
+  dot.title = `Daily mark as of ${s.as_of} (${days} trading day${days === 1 ? '' : 's'} ago)`;
 
   const live = s.live;
   if (live && live.nav != null) {
     document.getElementById('pill-nav').textContent =
       `${money2(live.nav * CFG.scale)} · ${signedPct(live.since_inception_return)}`;
-    document.getElementById('pill-sub').textContent = CFG.marked
-      ? `Marked ${s.as_of} · ${live.days_live} day${live.days_live === 1 ? '' : 's'} live`
-      : `${live.days_live} day${live.days_live === 1 ? '' : 's'} live · since ${live.inception_date}`;
+    document.getElementById('pill-sub').textContent =
+      `Daily mark ${s.as_of} · ${live.days_live} day${live.days_live === 1 ? '' : 's'} live`;
   } else {
     document.getElementById('pill-nav').textContent = 'Awaiting first mark';
     document.getElementById('pill-sub').textContent = `Data as of ${s.as_of}`;
@@ -1786,7 +1776,7 @@ function renderHoldings(s) {
     }
   });
 
-  const pricedDate = h.as_of || '—';
+  const pricedDate = h.price_as_of || 'unavailable';
   const rebalanceDate = h.last_rebalance || '—';
   const targetDate = h.target_as_of ? ` · Model scan ${h.target_as_of}` : '';
   const filingDate = h.latest_filing_date ? ` · Latest SEC filing ${h.latest_filing_date}` : '';
@@ -2068,11 +2058,8 @@ function fail(msg) {
    The binding limit is capacity, not arithmetic: $5M across 104 mid/large caps is
    ~$48k a name, where impact is immaterial. This would not hold at $500M.
 
-   `marked` books are remarked by the research pipeline at each monthly rebalance,
-   not by the daily price job -- build_snapshot_cloud.py only ever refreshes
-   portfolio_snapshot.json, and could not price these two anyway because their
-   positions carry no share counts. The page states that rather than flying a
-   staleness warning at a date that is behaving exactly as designed. */
+   All books have daily NAV marks. Retail is refreshed by the cloud job;
+   institutional and shadow simulations are published by the local daily service. */
 const ACCOUNTS = {
   '': {
     file: 'portfolio_snapshot.json',
@@ -2091,7 +2078,7 @@ const ACCOUNTS = {
     label: 'Institutional',
     scale: 500,
     base: 5000000,
-    marked: true,
+    marked: false,
     note: 'The 104-stock institutional book — the full top-quintile selection, '
         + 'equal-weighted. History is the Phase 74 two-factor score. Positions are '
         + 'target weights rather than executed lots, so no share counts are shown.'
@@ -2101,7 +2088,7 @@ const ACCOUNTS = {
     label: 'Shadow',
     scale: 500,
     base: 5000000,
-    marked: true,
+    marked: false,
     note: 'Experimental 85-stock book testing CDaR (Conditional Drawdown at Risk) '
         + 'dynamic position sizing. It selects on earnings surprise alone, so the '
         + 'Phase 74 scoring change does not apply to it — its 245-month history is '
@@ -2533,10 +2520,6 @@ async function loadModelData(account, {initial = false} = {}) {
     resetTransientChrome(account);
     renderAccountTabs(account);
 
-    if (CFG.marked) {
-      document.getElementById('model-description').innerHTML +=
-        ` <br><strong style="color:var(--amber);background:color-mix(in srgb, var(--amber) 10%, transparent);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:8px;">⚠️ Note: The Institutional and Shadow books are large portfolios that are only updated monthly during the official rebalance (Marked: ${esc(snap.as_of)}).</strong>`;
-    }
 
     SNAP = snap;
     renderHeadline(snap);
