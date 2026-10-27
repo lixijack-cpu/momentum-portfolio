@@ -1,0 +1,57 @@
+name: Deploy static content to Pages
+
+# Snapshots are priced and pushed by the private daily service, so this workflow
+# only gates and deploys. The schedule is a safety-net redeploy, not a refresh.
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    # 21:00 UTC is after the New York close in both EDT and EST.
+    - cron: '0 21 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install snapshot validation dependencies
+        run: pip install pandas yfinance
+      - name: Verify snapshot before deployment
+        run: python test_snapshot_gate.py && node test_holdings_ui.js
+      - name: Verify dashboard copy for all books
+        run: node test_dashboard_copy.js
+      # Publish only what the page loads. Scripts, tests and docs stay out of
+      # the served site.
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp index.html favicon.svg og-preview.jpg preview.png \
+             portfolio_snapshot.json institutional_snapshot.json shadow_snapshot.json \
+             retail_holdings_history.json institutional_holdings_history.json _site/
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

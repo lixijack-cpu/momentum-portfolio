@@ -1,0 +1,2628 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light" id="color-scheme" />
+<title>Systematic Equity — Quantitative Portfolio Dashboard</title>
+<!-- Applies the stored theme before the stylesheet paints. Deferring this to the main
+     script gives a light-mode reader a full dark flash on every load, because the page
+     is dark by default and the toggle would not run until after first paint. -->
+<script>
+(function () {
+  try {
+    var stored = localStorage.getItem('theme');
+    var light = stored ? stored === 'light'
+                       : window.matchMedia('(prefers-color-scheme: light)').matches;
+    if (light) {
+      document.documentElement.classList.add('theme-light');
+      document.getElementById('color-scheme').setAttribute('content', 'light dark');
+    }
+  } catch (e) { /* private mode: fall through to the dark default */ }
+})();
+</script>
+<meta name="description" content="Systematic US equity research: walk-forward backtests, a paper account, and simulated live tracks. No real capital is deployed." />
+<!-- Favicon -->
+<link rel="icon" type="image/svg+xml" href="https://lixijack-cpu.github.io/momentum-portfolio/favicon.svg" />
+
+<!-- Open Graph / LinkedIn / Facebook -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Systematic Equity" />
+<meta property="og:url" content="https://lixijack-cpu.github.io/momentum-portfolio/" />
+<meta property="og:title" content="Systematic Equity — Quantitative Portfolio Dashboard" />
+<meta property="og:description" content="Systematic US equity research: walk-forward backtests, a paper account, and simulated live tracks. No real capital is deployed." />
+<meta property="og:image" content="https://lixijack-cpu.github.io/momentum-portfolio/og-preview.jpg" />
+<meta property="og:image:secure_url" content="https://lixijack-cpu.github.io/momentum-portfolio/og-preview.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Systematic Equity research dashboard branding with an illustrative upward curve" />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Systematic Equity — Quantitative Portfolio Dashboard" />
+<meta name="twitter:description" content="Systematic US equity research: walk-forward backtests, a paper account, and simulated live tracks. No real capital is deployed." />
+<meta name="twitter:image" content="https://lixijack-cpu.github.io/momentum-portfolio/og-preview.jpg" />
+<meta name="twitter:image:alt" content="Systematic Equity research dashboard branding with an illustrative upward curve" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;800&amp;display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+/* ---------- theme tokens ----------
+   Every colour on this page resolves through one of these variables, including the ones
+   Chart.js and the canvas plugins paint with -- the JS reads them back out of
+   getComputedStyle rather than keeping its own copies, so a hue is defined exactly once.
+
+   Dark ("Carbon Graphite") is the default on :root. Light ("Frosted Slate") overrides
+   under .theme-light, which the pre-paint script in <head> sets from localStorage, or
+   from prefers-color-scheme when the reader has expressed no preference. There is
+   deliberately no @media(prefers-color-scheme) block: it would compete with the explicit
+   toggle, and the page already requires JS to render anything at all. */
+:root{
+  --bg:#121418;
+  --card:rgba(255,255,255,0.03);
+  --card-hover:rgba(255,255,255,0.055);
+  --border:rgba(255,255,255,0.05);
+  --border-strong:rgba(255,255,255,0.12);
+  --ink:rgba(255,255,255,0.92);
+  --ink-2:rgba(255,255,255,0.72);
+  --muted:rgba(255,255,255,0.55);
+  --blue:#3b82f6;
+  --amber:#f59e0b;
+  --grey:#94a3b8;
+  --grey-deep:#64748b;
+  --green:#10b981;
+  --red:#ef4444;
+  --grid:rgba(255,255,255,0.06);
+
+  --card-shadow:none;
+  --card-shadow-hover:0 18px 40px -18px rgba(0,0,0,.75);
+  --header-bg:#171a20;
+  --header-shadow:0 10px 30px -22px rgba(0,0,0,.95);
+  --hover-wash:rgba(255,255,255,0.03);
+  --hover-wash-strong:rgba(255,255,255,0.06);
+  --row-border:rgba(255,255,255,0.04);
+  --track:rgba(255,255,255,0.07);
+  --scrollbar:rgba(255,255,255,0.13);
+  --spinner-track:rgba(255,255,255,0.12);
+  --tab-active-ink:#dbeafe;
+  --tab-active-bg:linear-gradient(180deg,rgba(59,130,246,.22),rgba(59,130,246,.13));
+  --tab-active-shadow:0 2px 8px rgba(59,130,246,.18),inset 0 1px 0 rgba(255,255,255,.10);
+  --pill-bg:rgba(59,130,246,0.10);
+  --pill-border:rgba(59,130,246,0.35);
+  --pill-glow:0 0 18px rgba(59,130,246,0.14);
+  --glow-1:rgba(59,130,246,0.13);
+  --glow-2:rgba(139,92,246,0.10);
+  --violet:#a78bfa;
+
+  /* Read by the JS. --chart-surface is the *opaque* colour behind a canvas (the card
+     resolved over the page), which is what the stacked-bar separators have to match;
+     a translucent --card would let the bar below bleed through the gap. */
+  --chart-surface:#17191e;
+  --axis-border:rgba(255,255,255,0.12);
+  --tooltip-bg:rgba(13,19,36,0.96);
+  --tooltip-border:rgba(255,255,255,0.14);
+  --tooltip-title:#f3f4f6;
+  --tooltip-body:#c3cad8;
+  --series-bench:rgba(100,116,139,0.85);
+  --series-bench-fill:rgba(100,116,139,0.13);
+  --event-label-bg:rgba(10,15,30,0.88);
+
+  /* Heatmap ramp endpoints. The cell's text colour is not a token -- it is derived per
+     cell from the mixed background's luminance, because one fixed ink cannot stay legible
+     across a ramp that runs from a near-surface neutral to saturated green and red. */
+  --heat-neutral:#232a3a;
+  --heat-pos:#15803d;
+  --heat-neg:#b91c1c;
+
+  /* Validated 8-slot categorical palette (dark, surface #121418).
+     Adjacent-pair CVD ΔE 8.4 min, normal-vision ΔE 19.3 min, all ≥3:1 contrast. */
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+}
+
+.theme-light{
+  --bg:#f4f6f8;
+  --card:#ffffff;
+  --card-hover:#ffffff;
+  --border:rgba(15,23,42,0.09);
+  --border-strong:rgba(15,23,42,0.18);
+  --ink:#1e293b;
+  --ink-2:#334155;
+  --muted:#64748b;
+  /* Deepened for contrast on white. The originals are used as *text* -- the since-inception
+     figure and the sector chips wear these as their colour -- and #10b981 is 2.54:1 against
+     white, #f59e0b only 2.15:1. These four are all >=4.5:1. */
+  --blue:#2563eb;
+  --amber:#b45309;
+  --grey:#64748b;
+  --grey-deep:#475569;
+  --green:#047857;
+  --red:#dc2626;
+  --grid:rgba(15,23,42,0.08);
+
+  --card-shadow:0 4px 6px -1px rgba(0,0,0,0.05);
+  --card-shadow-hover:0 12px 24px -10px rgba(15,23,42,0.18);
+  --header-bg:#ffffff;
+  --header-shadow:0 1px 3px rgba(15,23,42,0.06);
+  --hover-wash:rgba(15,23,42,0.035);
+  --hover-wash-strong:rgba(15,23,42,0.06);
+  --row-border:rgba(15,23,42,0.07);
+  --track:rgba(15,23,42,0.08);
+  --scrollbar:rgba(15,23,42,0.2);
+  --spinner-track:rgba(15,23,42,0.12);
+  --tab-active-ink:#1e3a8a;
+  --tab-active-bg:linear-gradient(180deg,rgba(37,99,235,.14),rgba(37,99,235,.08));
+  --tab-active-shadow:0 1px 3px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.6);
+  --pill-bg:rgba(37,99,235,0.07);
+  --pill-border:rgba(37,99,235,0.28);
+  --pill-glow:0 1px 3px rgba(37,99,235,0.10);
+  --glow-1:rgba(37,99,235,0.07);
+  --glow-2:rgba(139,92,246,0.06);
+  --violet:#6d28d9;
+
+  --chart-surface:#ffffff;
+  --axis-border:rgba(15,23,42,0.16);
+  --tooltip-bg:rgba(255,255,255,0.98);
+  --tooltip-border:rgba(15,23,42,0.14);
+  --tooltip-title:#1e293b;
+  --tooltip-body:#475569;
+  --series-bench:rgba(71,85,105,0.85);
+  --series-bench-fill:rgba(100,116,139,0.12);
+  --event-label-bg:rgba(255,255,255,0.94);
+
+  --heat-neutral:#e8edf3;
+
+  /* Same eight hues in the same order, so a sector keeps its identity across themes.
+     Only slot 4 is re-stepped: #c98500 is 2.99:1 on white and the sector chips wear it as
+     text. #a86f00 clears 3:1 and lifts the worst adjacent CVD pair from ΔE 8.4 to 9.4. */
+  --s4:#a86f00;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  font-weight:300;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(900px 500px at 12% -8%, var(--glow-1), transparent 60%),
+    radial-gradient(760px 460px at 88% 4%, var(--glow-2), transparent 62%);
+}
+h1,h2,h3{font-weight:600;letter-spacing:-0.015em;line-height:1.25}
+a{color:inherit}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- header ---------- */
+header{
+  position:sticky;top:0;z-index:100;
+  display:flex;justify-content:space-between;align-items:center;gap:16px;
+  flex-wrap:wrap;
+  padding:14px clamp(16px,3vw,32px);
+  /* Solid, not blurred. A backdrop-filter here has to snapshot everything behind the
+     header, and once the heatmap's ~11,000px-wide scroll layer is in that backdrop the
+     rasterisation locks the renderer on scroll. Over an opaque page the blur was
+     invisible regardless. */
+  background:var(--header-bg);
+  border-bottom:1px solid var(--border);
+  box-shadow:var(--header-shadow);
+}
+.brand h1{font-size:1.18rem;margin-bottom:2px}
+.brand p{color:var(--muted);font-size:0.8rem;font-weight:300;letter-spacing:0.01em}
+.header-right{display:flex;align-items:center;gap:12px}
+.pill{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 14px;border-radius:999px;
+  background:var(--pill-bg);
+  border:1px solid var(--pill-border);
+  box-shadow:var(--pill-glow);
+}
+/* Theme toggle. Only one of the two glyphs is in the accessibility tree at a time --
+   the hidden one carries aria-hidden -- so a screen reader announces a single action
+   rather than "sun moon". */
+.theme-toggle{
+  width:38px;height:38px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:10px;cursor:pointer;
+  background:var(--hover-wash);border:1px solid var(--border);
+  color:var(--muted);
+  transition:color .18s,border-color .18s,background .18s;
+}
+.theme-toggle:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash-strong)}
+.theme-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.theme-toggle svg{width:18px;height:18px;display:block}
+.theme-toggle .icon-sun{display:none}
+.theme-light .theme-toggle .icon-sun{display:block}
+.theme-light .theme-toggle .icon-moon{display:none}
+.pill .nav-val{font-weight:600;font-size:0.95rem}
+.pill .nav-sub{color:var(--muted);font-size:0.72rem;display:block;font-weight:300}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;position:relative}
+.dot::after{content:'';position:absolute;inset:-4px;border-radius:50%;opacity:.28;background:inherit}
+.dot.fresh{background:var(--green)}
+.dot.warn{background:var(--amber)}
+.dot.stale{background:var(--red)}
+/* Books remarked at rebalance rather than daily. A fixed date is correct for them, so
+   they get a neutral dot instead of a staleness warning that would only ever go red. */
+.dot.marked{background:var(--grey)}
+
+/* ---------- layout ---------- */
+main{max-width:1400px;margin:0 auto;padding:clamp(18px,3vw,32px);display:grid;gap:22px}
+/* Grid and flex children default to min-width:auto, so the wide scrollable charts would
+   otherwise stretch every ancestor instead of scrolling inside their own container. */
+main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  /* No backdrop-filter here on purpose. Two cards wrap scroll containers thousands of
+     pixels wide, and the blur surface gets allocated across the whole scrollable extent —
+     enough to freeze the renderer. Over an opaque page the blur is invisible anyway; the
+     glass effect comes from the translucent fill plus the hairline border. The sticky
+     header keeps its blur, where content genuinely passes underneath. */
+  border-radius:16px;
+  padding:clamp(18px,2.4vw,26px);
+  box-shadow:var(--card-shadow);
+  transition:transform .22s ease,box-shadow .22s ease,background .22s ease,border-color .22s ease;
+}
+.card:hover{
+  transform:translateY(-2px);
+  background:var(--card-hover);
+  border-color:var(--border-strong);
+  box-shadow:var(--card-shadow-hover);
+}
+.section-head{margin-bottom:16px}
+.section-head h2{font-size:1.06rem}
+.section-head p{color:var(--muted);font-size:.82rem;margin-top:4px}
+
+.context-alert {
+  background:var(--hover-wash-strong);
+  border-left:4px solid var(--blue);
+  padding:12px 16px;
+  border-radius:6px;
+  font-size:.85rem;
+  color:var(--ink-2);
+  margin-top:18px;
+  margin-bottom:18px;
+  line-height:1.5;
+}
+.context-alert strong{color:var(--ink)}
+
+/* ---------- hero stats ---------- */
+.hero{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.hero-tools{margin-bottom:16px}
+.stat .label{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.09em;font-weight:500}
+.stat .value{font-weight:800;font-size:clamp(2rem,4.2vw,2.7rem);line-height:1.1;margin:8px 0 2px;letter-spacing:-0.03em}
+/* Units ride at a smaller size so a value like "+296 bps/yr" stays on one line and the
+   number keeps the visual weight, instead of wrapping and unbalancing the stat row. */
+.stat .value .unit{font-size:.4em;font-weight:600;letter-spacing:0;margin-left:.2em}
+.stat .foot{color:var(--muted);font-size:.76rem}
+.v-blue{color:var(--blue)}.v-violet{color:var(--violet)}.v-amber{color:var(--amber)}.v-green{color:var(--green)}.v-red{color:var(--red)}
+
+/* ---------- charts ---------- */
+.chart-box{position:relative;height:420px}
+.chart-box.short{height:300px}
+.chart-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.toggle button{
+  background:transparent;border:0;color:var(--muted);
+  font:inherit;font-size:.76rem;font-weight:500;
+  padding:5px 13px;cursor:pointer;transition:background .18s,color .18s;
+}
+.toggle button[aria-pressed="true"]{background:var(--pill-bg);color:var(--ink)}
+.toggle button:hover{color:var(--ink)}
+/* Segmented control, now header-resident and client-side. Two properties here are
+   load-bearing rather than cosmetic: align-self:center keeps the strip from stretching
+   to the header's cross-axis, and flex-wrap is what keeps the last segment reachable
+   -- the three labels are ~439px intrinsic against ~339px of usable width at a 375px
+   viewport, and body{overflow-x:hidden} clips the overflow rather than scrolling it.
+   The narrow breakpoint below switches to equal thirds so it never has to wrap at all. */
+/* .view-tabs shares every base rule so the two strips are visually identical, but is
+   deliberately excluded from the narrow-viewport override below: that one hard-codes
+   three equal columns for the three models, which a two-segment content switcher must
+   not inherit. The two bars are also scoped differently -- .account-tabs swaps the whole
+   snapshot, .view-tabs only swaps which pane of it is on screen. */
+.account-tabs,.view-tabs{
+  display:inline-flex;align-self:center;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:4px;gap:4px;box-shadow:var(--card-shadow);
+}
+.account-tabs .tab,.view-tabs .tab{
+  color:var(--muted);text-decoration:none;white-space:nowrap;
+  background:transparent;border:0;cursor:pointer;
+  font:inherit;font-size:.8rem;font-weight:600;padding:7px 15px;border-radius:999px;
+  transition:color .2s cubic-bezier(.4,0,.2,1),background .2s cubic-bezier(.4,0,.2,1),
+             box-shadow .2s cubic-bezier(.4,0,.2,1);
+}
+/* The count rides smaller and lighter so the model name keeps the visual weight and the
+   segment stays one line, matching how .stat .value handles its unit. */
+.account-tabs .tab .count{font-size:.86em;font-weight:500;opacity:.72;margin-left:.32em}
+.account-tabs .tab:hover,.view-tabs .tab:hover{color:var(--ink);background:var(--hover-wash)}
+.account-tabs .tab[aria-current="page"],.view-tabs .tab[aria-current="page"]{
+  background:var(--tab-active-bg);
+  color:var(--tab-active-ink);
+  box-shadow:var(--tab-active-shadow);
+}
+.account-tabs .tab[aria-current="page"] .count{opacity:.85}
+.account-tabs .tab:focus-visible,.view-tabs .tab:focus-visible{
+  outline:2px solid var(--blue);outline-offset:2px;
+}
+/* During a swap the strip stays visible and interactive-looking but ignores input, so a
+   double-click cannot start a second fetch while the charts are mid-teardown. */
+.account-tabs[aria-busy="true"],.view-tabs[aria-busy="true"]{pointer-events:none;opacity:.62}
+.view-tabs{margin-bottom:22px}
+.scale-badge{
+  display:inline-flex;align-items:center;
+  padding:4px 11px;border-radius:999px;white-space:nowrap;
+  background:color-mix(in srgb, var(--amber) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  color:var(--amber);font-size:.66rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;
+}
+.curve-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#model-description{
+  color:var(--muted);font-size:.82rem;line-height:1.6;
+  max-width:80ch;margin-bottom:22px;
+}
+.caption{color:var(--muted);font-size:.76rem;margin-top:12px}
+.scroll-x{overflow-x:auto;overflow-y:hidden;padding-bottom:8px}
+.scroll-x::-webkit-scrollbar{height:8px}
+.scroll-x::-webkit-scrollbar-thumb{background:var(--scrollbar);border-radius:8px}
+.scroll-x::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- legend ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:14px}
+.legend span{display:inline-flex;align-items:center;gap:7px;font-size:.78rem;color:var(--ink-2)}
+.swatch{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse}
+th,td{text-align:right;padding:13px 12px;font-size:.88rem;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:normal}
+thead th{
+  color:var(--muted);font-size:.7rem;font-weight:500;
+  text-transform:uppercase;letter-spacing:.09em;
+  border-bottom:1px solid var(--border);
+}
+tbody tr{border-bottom:1px solid var(--row-border);transition:background .18s}
+tbody tr:last-child{border-bottom:0}
+tbody tr:hover{background:var(--hover-wash)}
+.edge-pos{color:var(--green);font-weight:600}
+.edge-neg{color:var(--amber);font-weight:600}
+
+/* ---------- transparency ----------
+   Status pills follow .scale-badge rather than fixed hex values: every colour resolves
+   through a token, so the same markup reads correctly in Carbon Graphite and Frosted
+   Slate without a second rule set or a repaint hook. */
+.status-badge{
+  display:inline-flex;align-items:center;justify-content:center;min-width:74px;
+  padding:4px 11px;border-radius:999px;white-space:nowrap;
+  font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+}
+.status-in{
+  background:color-mix(in srgb, var(--green) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--green) 38%, transparent);
+  color:var(--green);
+}
+.status-hold{
+  background:color-mix(in srgb, var(--blue) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--blue) 32%, transparent);
+  color:var(--blue);
+}
+.status-out{
+  background:color-mix(in srgb, var(--red) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--red) 38%, transparent);
+  color:var(--red);
+}
+.status-snapshot{
+  background:color-mix(in srgb, var(--grey) 13%, transparent);
+  border:1px solid color-mix(in srgb, var(--grey) 30%, transparent);
+  color:var(--grey-deep);
+}
+.history-head{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  gap:16px;flex-wrap:wrap;
+}
+.history-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 4px}
+.field{
+  font:inherit;font-size:.78rem;color:var(--ink);
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:7px 14px;transition:border-color .18s,background .18s;
+}
+.field::placeholder{color:var(--muted)}
+.field:hover{border-color:var(--border-strong)}
+.field:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+select.field{cursor:pointer;padding-right:10px}
+.btn-ghost{
+  font:inherit;font-size:.78rem;font-weight:600;color:var(--ink-2);cursor:pointer;
+  background:var(--card);border:1px solid var(--border);border-radius:999px;
+  padding:7px 16px;transition:color .18s,border-color .18s,background .18s;
+}
+.btn-ghost:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash)}
+.btn-ghost:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.btn-ghost[disabled]{opacity:.45;cursor:default}
+.history-empty{
+  text-align:center;padding:56px 22px;color:var(--muted);
+  font-size:.86rem;line-height:1.7;
+}
+.history-empty strong{display:block;color:var(--ink);font-size:1rem;margin-bottom:8px}
+/* Skeleton rows hold the table's height while the payload lands, so activating the tab
+   does not collapse the page and bounce the scroll position. */
+.skel-row{
+  height:15px;border-radius:5px;margin:16px 0;
+  background:linear-gradient(90deg,var(--track) 25%,var(--hover-wash-strong) 37%,var(--track) 63%);
+  background-size:400% 100%;animation:skel 1.3s ease-in-out infinite;
+}
+@keyframes skel{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.ticker-cell{font-weight:600}
+.snapshot-row td{color:var(--muted)}
+/* The filter controls are self-evident sighted-side but need real labels for a screen
+   reader; a placeholder is not an accessible name. */
+.sr-only{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
+
+/* ---------- heatmap ---------- */
+.heat-wrap{display:flex;gap:10px;align-items:stretch}
+.heat-rowlabels{
+  display:grid;grid-template-rows:18px 34px 34px;gap:3px;
+  flex:0 0 auto;padding-top:0;
+}
+.heat-table{width:100%;border-collapse:separate;border-spacing:3px;margin-top:12px}
+.heat-table th{color:var(--muted);font-weight:400;font-size:.68rem;padding-bottom:6px;text-align:center}
+.heat-year-col{color:var(--ink);font-weight:600;font-size:.72rem;text-align:left;padding-right:12px;vertical-align:top;padding-top:8px}
+.heat-table td{padding:0}
+/* No colour here on purpose. The ramp runs from a near-surface neutral to saturated green
+   and red, so no single ink stays legible across it -- renderHeatmap sets each cell's
+   colour from its own background luminance. */
+.heat-cell{
+  width:100%;min-width:38px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+  font-size:.68rem;font-weight:500;font-variant-numeric:tabular-nums;
+  cursor:default;
+  transition:transform .14s ease,outline-color .14s ease;
+  outline:1px solid transparent;
+}
+.heat-cell.spy-cell{height:16px;font-size:.55rem;opacity:0.75;margin-bottom:6px;border-radius:2px;}
+.heat-cell.empty{background:transparent !important;outline:none;}
+.heat-cell:hover:not(.empty){transform:scale(1.13);outline-color:var(--border-strong);position:relative;z-index:3;opacity:1}
+.scale-legend{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:.74rem;color:var(--muted)}
+.scale-bar{width:150px;height:9px;border-radius:5px;
+  background:linear-gradient(90deg,var(--heat-neg),var(--heat-neutral),var(--heat-pos))}
+
+/* ---------- holdings ---------- */
+.holding{
+  display:grid;
+  grid-template-columns:74px minmax(0,1fr) auto 132px;
+  gap:14px;align-items:center;
+  padding:12px 8px;border-bottom:1px solid var(--row-border);
+  transition:background .18s;
+}
+.holding:last-child{border-bottom:0}
+.holding:hover{background:var(--hover-wash)}
+.tkr{font-weight:600;font-size:.94rem}
+.co{color:var(--muted);font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.position-meta{
+  color:var(--ink-2);font-size:.72rem;margin-top:3px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.chip{
+  font-size:.68rem;padding:3px 10px;border-radius:999px;white-space:nowrap;
+  border:1px solid currentColor;font-weight:500;
+}
+.wbar{display:flex;align-items:center;gap:9px}
+.wbar .track{flex:1;height:6px;border-radius:4px;background:var(--track);overflow:hidden}
+/* display:block matters — the fill is a <span>, and width/height are ignored on inline
+   boxes, which renders every weight bar empty. */
+.wbar .fill{display:block;height:100%;border-radius:4px;transition:width .5s ease}
+.wbar .pct{font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--ink-2);min-width:46px;text-align:right}
+.show-all{
+  display:block;width:100%;margin-top:14px;
+  background:var(--hover-wash);border:1px solid var(--border);
+  color:var(--ink-2);font:inherit;font-size:.8rem;font-weight:500;
+  padding:11px;border-radius:12px;cursor:pointer;
+  transition:background .18s,border-color .18s,color .18s;
+}
+.show-all:hover{background:var(--hover-wash-strong);border-color:var(--border-strong);color:var(--ink)}
+.show-all:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.livestats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
+.livestat{background:var(--hover-wash);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.livestat .k{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:500}
+.livestat .v{font-weight:600;font-size:1.24rem;margin-top:5px;font-variant-numeric:tabular-nums}
+.disclaimer{color:var(--muted);font-size:.74rem;margin-top:16px;line-height:1.6}
+
+/* ---------- sector conviction ---------- */
+.sector-conviction-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;
+}
+.sector-conviction-card{
+  min-width:0;background:var(--hover-wash);border:1px solid var(--border);
+  border-radius:12px;padding:16px;transition:background .18s,border-color .18s,transform .18s;
+}
+.sector-conviction-card:hover{
+  background:var(--hover-wash-strong);border-color:var(--border-strong);transform:translateY(-1px);
+}
+.sector-conviction-card h3{
+  color:var(--ink);font-size:.82rem;letter-spacing:.04em;margin-bottom:11px;
+}
+.sector-conviction-card ul{list-style:none;display:grid;gap:8px}
+.sector-conviction-card li{
+  display:grid;grid-template-columns:58px minmax(0,1fr);gap:10px;align-items:baseline;
+  padding-top:8px;border-top:1px solid var(--row-border);
+}
+.sector-conviction-card li:first-child{padding-top:0;border-top:0}
+.conviction-ticker{color:var(--blue);font-size:.78rem;font-weight:600;letter-spacing:.03em}
+.conviction-name{
+  color:var(--ink-2);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sector-conviction-disclaimer{font-style:italic;margin-bottom:18px;margin-top:0}
+
+/* ---------- regime banner ---------- */
+#regime-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(128,128,128,0.12);
+  color: var(--muted);
+  flex-wrap: wrap;
+  white-space: normal;
+}
+#regime-banner[data-state="risk_on"] { background: linear-gradient(90deg, rgba(16,185,129,0.10) 0%, transparent 50%); }
+#regime-banner[data-state="risk_off"] { background: linear-gradient(90deg, rgba(239,68,68,0.10) 0%, transparent 50%); }
+.rb-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+[data-state="risk_on"] .rb-dot { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.6); }
+[data-state="risk_off"] .rb-dot { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.6); }
+.rb-label { font-weight:700; text-transform:uppercase; font-size:11px; }
+[data-state="risk_on"] .rb-label { color:#10b981; }
+[data-state="risk_off"] .rb-label { color:#ef4444; }
+.rb-sep { opacity:0.3; margin:0 4px; }
+.rb-tag { background:rgba(128,128,128,0.12); border-radius:4px; padding:2px 7px; font-size:11px; }
+
+/* ---------- about ---------- */
+details{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:var(--card-shadow)}
+summary{
+  cursor:pointer;padding:18px 22px;font-weight:600;font-size:1rem;
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  list-style:none;transition:background .18s;
+}
+summary::-webkit-details-marker{display:none}
+summary:hover{background:var(--hover-wash)}
+summary .caret{color:var(--muted);transition:transform .22s ease;font-size:.8rem}
+details[open] summary .caret{transform:rotate(180deg)}
+.about-body{padding:0 22px 22px;color:var(--ink-2);font-size:.92rem;max-width:78ch}
+.about-body p+p{margin-top:12px}
+
+/* ---------- footer ---------- */
+footer{
+  max-width:1400px;margin:10px auto 0;
+  padding:26px clamp(16px,3vw,32px) 46px;
+  border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:flex-start;gap:22px;flex-wrap:wrap;
+}
+footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
+.social{display:flex;gap:12px}
+.social a{
+  width:38px;height:38px;border-radius:10px;
+  border:1px solid var(--border);background:var(--hover-wash);
+  display:flex;align-items:center;justify-content:center;color:var(--muted);
+  transition:color .18s,border-color .18s,transform .18s,background .18s;
+}
+.social a:hover{color:var(--ink);border-color:var(--border-strong);background:var(--hover-wash-strong);transform:translateY(-2px)}
+
+/* ---------- states ---------- */
+#state{
+  position:fixed;inset:0;z-index:200;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  background:var(--bg);text-align:center;padding:24px;
+}
+.spinner{
+  width:38px;height:38px;border-radius:50%;
+  border:2.5px solid var(--spinner-track);border-top-color:var(--blue);
+  animation:spin .85s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#state p{color:var(--muted);font-size:.88rem}
+[hidden]{display:none !important}
+
+@media (max-width:720px){
+  .chart-box{height:320px}
+  .holding{grid-template-columns:64px minmax(0,1fr);row-gap:8px}
+  .holding .chip{justify-self:start}
+  .holding .wbar{grid-column:1 / -1}
+  header{gap:10px}
+  .brand h1{font-size:1.05rem}
+  th,td{padding:11px 8px;font-size:.82rem}
+  /* The pill drops onto its own full-width row below the brand and NAV pill rather than
+     competing with them for the header's inline axis. Equal thirds with labels allowed to
+     wrap keeps all three segments on screen and tappable down to 320px. */
+  .header-right{flex-wrap:wrap;width:100%;justify-content:flex-end}
+  .account-tabs{
+    display:grid;grid-template-columns:repeat(3,1fr);
+    order:3;width:100%;border-radius:16px;
+  }
+  .account-tabs .tab{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    padding:9px 6px;font-size:.72rem;white-space:normal;line-height:1.25;border-radius:12px;
+  }
+  .account-tabs .tab .count{margin-left:0;display:block;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<div id="state">
+  <div class="spinner" id="spinner"></div>
+  <p id="state-msg">Loading portfolio data…</p>
+</div>
+
+<header hidden id="hdr">
+  <div class="brand">
+    <h1>Systematic Equity</h1>
+    <p>Long-Only · Systematic Research · Daily Marks</p>
+  </div>
+  <div class="header-right">
+    <nav class="account-tabs" id="account-tabs" aria-label="Portfolio model">
+      <button type="button" class="tab" data-account="">Retail<span class="count"></span></button>
+      <button type="button" class="tab" data-account="institutional">Institutional<span class="count"></span></button>
+      <button type="button" class="tab" data-account="shadow">Shadow<span class="count"></span></button>
+    </nav>
+    <div class="pill">
+      <span class="dot" id="dot" title=""></span>
+      <span>
+        <span class="nav-val num" id="pill-nav">—</span>
+        <span class="nav-sub" id="pill-sub">—</span>
+      </span>
+    </div>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false"
+            aria-label="Switch to light theme" title="Switch to light theme">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+      </svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M4.35 4.35l1.56 1.56M18.09 18.09l1.56 1.56M2.6 12h2.2M19.2 12h2.2M4.35 19.65l1.56-1.56M18.09 5.91l1.56-1.56"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<div id="regime-banner" data-state="risk_on" hidden>
+  <span class="rb-dot"></span><span title="Shared research signal, not the selected book’s current holdings">Research signal</span>
+  <span class="rb-label" id="rb-state">RISK ON</span>
+  <span class="rb-sep">·</span>
+  <span id="rb-exposure">—</span>
+  <span class="rb-sep">|</span>
+  <span>Equity <span id="rb-eq-wt" class="rb-tag">—</span></span>
+  <span class="rb-sep">·</span>
+  <span>Macro ETF <span id="rb-macro-wt" class="rb-tag">—</span></span>
+  <span class="rb-sep">|</span>
+  <span>Macro targets: <span id="rb-longs" class="rb-tag">—</span></span>
+  <span class="rb-sep">·</span>
+  <span>Macro sleeves in cash: <span id="rb-cash" class="rb-tag">—</span></span>
+  <span class="rb-sep">|</span>
+  <span id="rb-asof" >as of —</span>
+</div>
+
+<main hidden id="main">
+
+  <!-- Content views. Deliberately a separate strip from #account-tabs: that one chooses
+       which book is loaded, this one chooses which pane of it is shown. -->
+  <nav class="view-tabs" id="view-tabs" aria-label="Dashboard view">
+    <button type="button" class="tab" data-view="overview">Overview</button>
+    <button type="button" class="tab" data-view="journal">Trade Journal</button>
+  </nav>
+
+  <div id="model-description"></div>
+
+  <div id="view-overview">
+
+  <!-- Swaps the four cards below between the certified backtest window and the live
+       account. Hidden when the loaded book carries no live benchmark. -->
+  <div class="chart-tools hero-tools" id="hero-tools">
+    <div class="toggle" role="group" aria-label="Hero metrics">
+      <button type="button" id="sel-backtest" aria-pressed="true">Historical Stats</button>
+      <button type="button" id="sel-live" aria-pressed="false">Live Track</button>
+    </div>
+  </div>
+
+  <section class="hero">
+    <div class="card stat">
+      <div class="label" id="k-cagr-label">Annualized Return</div>
+      <div class="value v-blue num" id="k-cagr">—</div>
+      <div class="foot" id="k-cagr-foot">—</div>
+    </div>
+    <div class="card stat">
+      <div class="label" id="k-sharpe-label">Sharpe Ratio</div>
+      <div class="value v-violet num" id="k-sharpe">—</div>
+      <div class="foot" id="k-sharpe-foot">—</div>
+    </div>
+    <div class="card stat">
+      <div class="label" id="k-dd-label">Max Drawdown</div>
+      <div class="value v-amber num" id="k-dd">—</div>
+      <div class="foot" id="k-dd-foot">—</div>
+    </div>
+    <div class="card stat">
+      <div class="label" id="k-edge-label">Excess vs S&amp;P 500</div>
+      <div class="value v-green num" id="k-edge">—</div>
+      <div class="foot" id="k-edge-foot">—</div>
+    </div>
+  </section>
+
+  <div class="context-alert" id="live-context-banner" hidden></div>
+
+  <section class="card">
+    <div class="section-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+      <div>
+        <div class="curve-title">
+          <h2 id="curve-title">Growth of $10,000</h2>
+          <span class="scale-badge" id="scale-badge" hidden></span>
+        </div>
+        <p id="curve-sub">—</p>
+      </div>
+      <div class="chart-tools">
+        <div class="toggle" role="group" aria-label="Y-axis scale">
+          <button id="btn-log" aria-pressed="true">Log</button>
+          <button id="btn-lin" aria-pressed="false">Linear</button>
+        </div>
+        <div class="toggle"><button id="btn-reset" aria-pressed="false">Reset zoom</button></div>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="equity"></canvas></div>
+    <div class="caption">💡 Scroll to zoom · Drag to pan · Double-click to reset</div>
+    <div class="caption" id="rebase-note"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Historical Drawdowns by Stress Window</h2>
+      <p>Peak-to-trough drawdown within each listed window, strategy versus S&amp;P 500, on two bases. Month-end drawdowns use the same month-end marks as the Monthly Performance table below; intraday drawdowns use daily closes and are deeper because they capture troughs between month-ends. The difference column compares the daily-close drawdowns.</p>
+    </div>
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr><th>Period</th><th>Strategy Month-End DD</th><th>Strategy Intraday DD</th><th>S&amp;P 500 Month-End DD</th><th>S&amp;P 500 Intraday DD</th><th>Difference (pp)</th></tr>
+        </thead>
+        <tbody id="crash-body"></tbody>
+      </table>
+    </div>
+    <p class="disclaimer" id="crash-note"></p>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Historical Sector Allocation — Reference Configuration</h2>
+      <p id="sector-sub"></p>
+    </div>
+    <div class="scroll-x"><div id="sector-shell" class="chart-box short"><canvas id="sectors"></canvas></div></div>
+    <div class="legend" id="sector-legend"></div>
+    <p class="disclaimer" id="sector-note"></p>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Monthly Performance — Portfolio vs S&amp;P 500</h2>
+      <p id="heat-sub"></p>
+      <p class="caption" id="heat-dd-note">Each cell is a single month and each Year cell is one calendar year. A drawdown that spans several months compounds across consecutive cells and can cross a year boundary, so no single cell shows its full depth. For example, the 2008-06 to 2009-02 decline compounds across nine monthly cells and two calendar years; its full depth is the month-end drawdown in the stress table above, while the 2008 Year cell is shallower because gains earlier in 2008 offset part of it.</p>
+    </div>
+    <div class="heat-wrap">
+      <div class="scroll-x"><div id="heat-grid"></div></div>
+    </div>
+    <div class="scale-legend">
+      <span>≤ −10%</span><span class="scale-bar"></span><span>≥ +10%</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2 id="hold-title">Current Portfolio</h2>
+      <p id="hold-sub">—</p>
+    </div>
+    <div class="livestats">
+      <div class="livestat"><div class="k" id="l-nav-k">Net Asset Value</div><div class="v num" id="l-nav">—</div></div>
+      <div class="livestat"><div class="k" id="l-ret-k">Return Since Live Start</div><div class="v num" id="l-ret">—</div></div>
+      <div class="livestat"><div class="k" id="l-days-k">Trading Sessions</div><div class="v num" id="l-days">—</div></div>
+    </div>
+    <div id="holdings"></div>
+    <p class="disclaimer" id="hold-disclaimer"></p>
+  </section>
+
+  <section class="card" id="sector-conviction-section" hidden>
+    <div class="section-head">
+      <h2>Quantitative Sector Conviction</h2>
+      <p>Leading disclosed names within each sector from the latest monthly ranking. Names still under the 30-day embargo are withheld.</p>
+    </div>
+    <p class="disclaimer sector-conviction-disclaimer"><em>Names from the published factor-ranking watchlist. These are not active holdings.</em></p>
+    <div class="sector-conviction-grid" id="sector-conviction"></div>
+  </section>
+
+  <section>
+    <details>
+      <summary>About This Strategy <span class="caret">▼</span></summary>
+      <div class="about-body">
+        <p>A systematic US equity research dashboard with historical walk-forward results and daily live-track marks. No real capital is deployed.</p>
+        <p id="about-book"></p>
+        <p id="about-metrics"></p>
+        <p>Historical results use point-in-time inputs and modeled transaction costs. A backtest is not an execution record, and simulated returns do not establish achievable trading capacity.</p>
+        <p>Research signals and dashboard updates are automated. The dates shown identify the latest published marks; source data and publication can lag.</p>
+        <p id="about-method"></p>
+      </div>
+    </details>
+  </section>
+
+  </div><!-- /#view-overview -->
+
+  <div id="view-journal" hidden>
+    <section class="card">
+      <div class="section-head history-head">
+        <div>
+          <h2 id="history-title">Trade Journal</h2>
+          <p id="history-sub"></p>
+        </div>
+        <span class="status-badge status-snapshot" id="history-book" hidden></span>
+      </div>
+
+      <div class="history-tools">
+        <label class="sr-only" for="history-month">Filter by month</label>
+        <select class="field" id="history-month"><option value="">All months</option></select>
+        <label class="sr-only" for="history-ticker">Search ticker</label>
+        <input class="field" id="history-ticker" type="search" placeholder="Search ticker…"
+               autocomplete="off" spellcheck="false">
+        <button type="button" class="btn-ghost" id="history-export">Export CSV</button>
+        <span class="caption" id="history-count" style="margin:0"></span>
+      </div>
+
+      <div id="history-skeleton" hidden>
+        <div class="skel-row" style="width:100%"></div>
+        <div class="skel-row" style="width:92%"></div>
+        <div class="skel-row" style="width:96%"></div>
+        <div class="skel-row" style="width:88%"></div>
+        <div class="skel-row" style="width:94%"></div>
+      </div>
+
+      <div id="history-empty" class="history-empty" hidden></div>
+
+      <div class="scroll-x" id="history-table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Ticker</th><th>Status</th>
+              <th id="history-size-head">Shares</th><th>Price</th>
+              <th>Day Return</th><th>Hold (Calendar Days)</th><th id="history-pnl-head">Cum. P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+
+      <button type="button" class="show-all" id="history-more" hidden></button>
+
+      <p class="disclaimer" id="history-note"></p>
+      <p class="disclaimer" id="history-execution-note" style="margin-top:6px"></p>
+    </section>
+  </div><!-- /#view-journal -->
+
+</main>
+
+<footer hidden id="ftr">
+  <p>This is a personal research project. No real capital is deployed. Historical results are simulations; live-track results are paper-traded or simulated, as labeled.
+     Past performance does not guarantee future results. Not investment advice.</p>
+  <div class="social">
+    <a href="https://github.com/lixijack-cpu/momentum-portfolio" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>
+    </a>
+    <a href="https://www.linkedin.com/in/jack-power-475066327/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05a3.74 3.74 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13ZM7.12 20.45H3.55V9h3.57v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0Z"/></svg>
+    </a>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* Dashboard glossary (US English):
+   Walk-forward backtest: Dec 2005 (Feb 2006 for Shadow) through Dec 2025.
+   2026 simulation: Jan-Jun 2026; still walk-forward and out-of-sample.
+   Live track: from the book's live start (Retail 2026-07-27; model books 2026-07-24).
+   Retail: a funded $10,000 paper account; no real capital is deployed.
+   Institutional and Shadow: target weights applied at the live-start close,
+   labeled "Live (simulated)"; not execution records or verified inception-time targets.
+   Name "strategy start" or "live start" explicitly; never use unqualified "inception".
+   Chart baseline points can precede the first return period. */
+
+/* ---------- theme ----------
+   Chart.js resolves colours once, at construction, and the canvas plugins paint straight
+   onto the context -- so nothing below can be a module constant captured at load. Every
+   colour is read from the live CSS custom properties at the moment it is needed, which
+   makes the stylesheet the single definition of the palette and lets a theme switch be a
+   re-read rather than a second hardcoded table kept in sync by hand. */
+const token = name => getComputedStyle(document.documentElement)
+  .getPropertyValue(name).trim();
+
+const sectorColors = () =>
+  ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'].map(token);
+
+function themeColors() {
+  return {
+    surface:      token('--chart-surface'),
+    inkMuted:     token('--muted'),
+    ink:          token('--ink'),
+    ink2:         token('--ink-2'),
+    grid:         token('--grid'),
+    axisBorder:   token('--axis-border'),
+    tooltipBg:    token('--tooltip-bg'),
+    tooltipBorder:token('--tooltip-border'),
+    tooltipTitle: token('--tooltip-title'),
+    tooltipBody:  token('--tooltip-body'),
+    bench:        token('--series-bench'),
+    benchFill:    token('--series-bench-fill'),
+    eventLabelBg: token('--event-label-bg'),
+    grey:         token('--grey'),
+    blue:         token('--blue'),
+    amber:        token('--amber'),
+    heatNeutral:  token('--heat-neutral'),
+    heatPos:      token('--heat-pos'),
+    heatNeg:      token('--heat-neg')
+  };
+}
+
+/* ---------- formatting ---------- */
+const pct = (v, dp = 2) => (v * 100).toFixed(dp) + '%';
+const signedPct = (v, dp = 2) => (v >= 0 ? '+' : '') + (v * 100).toFixed(dp) + '%';
+const money = v => '$' + Math.round(v).toLocaleString('en-US');
+/* Axis ticks only. The institutional tabs put eight-figure numbers on the y-axis, and a
+   column of "$80,000,000" crowds the plot area; the tooltip still prints exact dollars.
+   Below $1M this is a no-op, so the small account's axis is unchanged. */
+const moneyTick = v => {
+  const a = Math.abs(v);
+  if (a >= 1e9) return '$' + +(v / 1e9).toFixed(1) + 'B';
+  if (a >= 1e6) return '$' + +(v / 1e6).toFixed(1) + 'M';
+  return money(v);
+};
+const money2 = v => '$' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+/* Holdings rows are built with innerHTML, and company names arrive from the research
+   pipeline -- one ampersand or quote in a name would otherwise break the markup it is
+   interpolated into (p.name lands inside a title="..." attribute). */
+const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ESCAPES[c]);
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const utcDateKey = d =>
+  `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+function nthWeekdayOfMonth(year, month, weekday, nth) {
+  const first = new Date(Date.UTC(year, month, 1));
+  const day = 1 + (7 + weekday - first.getUTCDay()) % 7 + (nth - 1) * 7;
+  return new Date(Date.UTC(year, month, day));
+}
+
+function lastWeekdayOfMonth(year, month, weekday) {
+  const last = new Date(Date.UTC(year, month + 1, 0));
+  const day = last.getUTCDate() - (7 + last.getUTCDay() - weekday) % 7;
+  return new Date(Date.UTC(year, month, day));
+}
+
+// Gregorian Easter (Meeus/Jones/Butcher), used to derive Good Friday.
+function easterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = (h + l - 7 * m + 114) % 31 + 1;
+  return new Date(Date.UTC(year, month, day));
+}
+
+function observedFixedHoliday(year, month, day) {
+  const holiday = new Date(Date.UTC(year, month, day));
+  if (holiday.getUTCDay() === 6) holiday.setUTCDate(holiday.getUTCDate() - 1);
+  if (holiday.getUTCDay() === 0) holiday.setUTCDate(holiday.getUTCDate() + 1);
+  return holiday;
+}
+
+function nyseHolidayKeys(year) {
+  const holidays = new Set();
+  const add = d => holidays.add(utcDateKey(d));
+  const newYear = new Date(Date.UTC(year, 0, 1));
+  // NYSE does not take the preceding Friday off when January 1 falls Saturday.
+  if (newYear.getUTCDay() === 0) newYear.setUTCDate(2);
+  add(newYear);
+  add(nthWeekdayOfMonth(year, 0, 1, 3));   // Martin Luther King Jr. Day
+  add(nthWeekdayOfMonth(year, 1, 1, 3));   // Washington's Birthday
+  add(new Date(easterSunday(year).getTime() - 2 * DAY_MS)); // Good Friday
+  add(lastWeekdayOfMonth(year, 4, 1));      // Memorial Day
+  if (year >= 2022) add(observedFixedHoliday(year, 5, 19)); // Juneteenth
+  add(observedFixedHoliday(year, 6, 4));    // Independence Day
+  add(nthWeekdayOfMonth(year, 8, 1, 1));    // Labor Day
+  add(nthWeekdayOfMonth(year, 10, 4, 4));   // Thanksgiving
+  add(observedFixedHoliday(year, 11, 25));  // Christmas
+  return holidays;
+}
+
+function newYorkDateKey(value) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(value);
+  const byType = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function tradingDaysSince(iso, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  if (!match) return 0;
+  const then = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+  const todayParts = newYorkDateKey(now).split('-').map(Number);
+  const today = new Date(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]));
+  if (then >= today) return 0;
+
+  let days = 0;
+  const cur = new Date(then);
+  while (cur < today) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const weekday = cur.getUTCDay();
+    const holidays = nyseHolidayKeys(cur.getUTCFullYear());
+    if (weekday !== 0 && weekday !== 6 && !holidays.has(utcDateKey(cur))) days++;
+  }
+  return days;
+}
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+function mixRgb(a, b, t) {
+  const A = hexToRgb(a), B = hexToRgb(b);
+  return A.map((v, i) => Math.round(v + (B[i] - v) * t));
+}
+const rgbCss = c => `rgb(${c.join(',')})`;
+
+/* Pick the ink for a heat cell from its own background. A heat ramp is not a flat surface:
+   it runs from a near-surface neutral out to saturated green and red, so a single fixed
+   colour is unreadable at one end whichever end you pick -- white ink vanishes on the pale
+   light-mode neutral, dark ink vanishes on saturated red. The crossover is where WCAG
+   contrast against white and against near-black is equal, L = 0.218. */
+function inkOn(rgb) {
+  const lin = c => (c /= 255) <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  return L > 0.218 ? '#0f172a' : 'rgba(255,255,255,0.95)';
+}
+
+/* ---------- chart defaults ---------- */
+function applyDefaults() {
+  const C = themeColors();
+  Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
+  Chart.defaults.font.weight = 300;
+  Chart.defaults.font.size = 11;
+  Chart.defaults.color = C.inkMuted;
+  Chart.defaults.animation.duration = 600;
+  Chart.defaults.plugins.tooltip.backgroundColor = C.tooltipBg;
+  Chart.defaults.plugins.tooltip.borderColor = C.tooltipBorder;
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.padding = 12;
+  Chart.defaults.plugins.tooltip.cornerRadius = 10;
+  Chart.defaults.plugins.tooltip.titleColor = C.tooltipTitle;
+  Chart.defaults.plugins.tooltip.bodyColor = C.tooltipBody;
+  Chart.defaults.plugins.tooltip.titleFont = {weight: 600, size: 12};
+  Chart.defaults.plugins.tooltip.displayColors = true;
+  Chart.defaults.plugins.tooltip.boxWidth = 9;
+  Chart.defaults.plugins.tooltip.boxHeight = 9;
+  Chart.defaults.plugins.tooltip.usePointStyle = true;
+}
+
+/* Vertical event markers. Written inline so the page keeps to the three approved
+   CDN libraries rather than pulling in the annotation plugin. */
+const eventLines = {
+  id: 'eventLines',
+  afterDatasetsDraw(chart, _args, opts) {
+    const events = opts && opts.events;
+    if (!events) return;
+    const {ctx, chartArea: area, scales} = chart;
+    ctx.save();
+    ctx.font = "500 10px 'Inter',sans-serif";
+    events.forEach(ev => {
+      const x = scales.x.getPixelForValue(new Date(ev.date).getTime());
+      if (x < area.left || x > area.right) return;
+      ctx.beginPath();
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = ev.color;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1;
+      ctx.moveTo(x, area.top);
+      ctx.lineTo(x, area.bottom);
+      ctx.stroke();
+
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+      const w = ctx.measureText(ev.label).width + 12;
+      // Flip the label inward when the marker sits near the right edge.
+      const flip = x + w + 6 > area.right;
+      const bx = flip ? x - w - 5 : x + 5;
+      ctx.fillStyle = opts.labelBg;
+      ctx.strokeStyle = ev.color;
+      ctx.lineWidth = 1;
+      const by = area.top + 6, bh = 18, r = 5;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, w, bh, r);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ev.color;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ev.label, bx + 6, by + bh / 2 + 0.5);
+    });
+    ctx.restore();
+  }
+};
+
+/* Soft outer glow on the live series only. */
+const glowLine = {
+  id: 'glowLine',
+  beforeDatasetDraw(chart, args) {
+    if (chart.data.datasets[args.index] && chart.data.datasets[args.index].glow) {
+      chart.ctx.save();
+      chart.ctx.shadowColor = 'rgba(59,130,246,0.85)';
+      chart.ctx.shadowBlur = 14;
+    }
+  },
+  afterDatasetDraw(chart, args) {
+    if (chart.data.datasets[args.index] && chart.data.datasets[args.index].glow) {
+      chart.ctx.restore();
+    }
+  }
+};
+
+/* ---------- renderers ---------- */
+let equityChart = null;
+let sectorChart = null;
+let SNAP = null;
+
+
+const simulatedBook = () => CFG.scale !== 1;
+const liveLabel = () => simulatedBook() ? 'Live (simulated)' : 'Live (paper account)';
+const rangeOf = (rows, key = 'd') => rows.length
+  ? `${rows[0][key]} to ${rows[rows.length - 1][key]}` : 'not available';
+const headlineSummary = h => `${pct(h.cagr)} CAGR / Sharpe ${h.sharpe.toFixed(3)} / `
+  + `${h.excess_vs_spy_bps >= 0 ? '+' : ''}${h.excess_vs_spy_bps} bps/yr vs S&P 500 / `
+  + `${pct(h.max_drawdown, 1)} max drawdown (${h.max_drawdown_basis}) / `
+  + `${pct(h.max_drawdown_daily, 1)} max drawdown (daily marks)`;
+
+function renderBookCopy(s) {
+  const positions = s.holdings.positions;
+  const n = positions.length;
+  const sim = simulatedBook();
+  const accountText = sim
+    ? `${CFG.label}: ${n} model target names. ${CFG.description} The live track is a buy-and-hold simulation using target weights applied at the live-start close; these are not executed lots.`
+    : `${CFG.label}: ${n} paper-account holdings with integer-share sizing. The paper account was funded with ${money(s.live.inception_nav)} at live start ${s.live.inception_date}.`;
+  document.getElementById('model-description').textContent = accountText;
+  document.getElementById('about-book').textContent = accountText;
+  document.getElementById('about-metrics').textContent = `Historical results: ${headlineSummary(s.headline)}.`;
+  document.getElementById('sel-live').textContent = liveLabel();
+  document.getElementById('hold-title').textContent = sim ? 'Current Model Target Weights' : 'Current Paper-Account Holdings';
+  document.getElementById('history-title').textContent = sim ? 'Model Target Journal' : 'Paper Trade Journal';
+  document.querySelector('[data-view="journal"]').textContent = sim ? 'Target Journal' : 'Trade Journal';
+  document.getElementById('history-sub').textContent = sim
+    ? 'Published model-target additions and removals. These records do not establish executed trades or the holdings used by the buy-and-hold live simulation.'
+    : 'Paper-ledger initial entries (BUY) and complete exits (SELL). Position resizing is omitted from this journal.';
+  document.getElementById('history-execution-note').textContent = sim
+    ? 'Target changes are labeled ADDED and REMOVED. Missing prices or contributions are unavailable, not evidence of execution.'
+    : 'BUY and SELL describe paper-account activity only. No real capital is deployed.';
+  document.querySelectorAll('#account-tabs .tab').forEach(tab => {
+    if (ACCOUNTS[tab.dataset.account] === CFG) tab.querySelector('.count').textContent = `${n} names`;
+  });
+}
+
+/* ---------- hero cards ----------
+   The four cards tell two different stories -- the certified backtest window and the live
+   account -- and only one can be on screen. Every pass writes label, value, foot AND hue
+   for all four slots, so nothing survives from the view before it. That is also why none
+   of this needs registering in RESETTABLE_NOTES: these are unconditional writes, not the
+   one-way conditional writes that list exists to undo.
+
+   Hue is part of the payload because the live numbers can be negative, which the backtest
+   figures never are. A losing month rendered in the backtest view's green would read as a
+   win. */
+const HERO_HUES = ['v-blue', 'v-violet', 'v-amber', 'v-green', 'v-red'];
+const signHue = v => (v < 0 ? 'v-red' : 'v-green');
+
+let HERO_VIEW = 'backtest';
+
+function setCard(slot, {label, value, html, foot, hue}) {
+  document.getElementById(`${slot}-label`).textContent = label;
+  const el = document.getElementById(slot);
+  if (html != null) el.innerHTML = html; else el.textContent = value;
+  el.classList.remove(...HERO_HUES);
+  el.classList.add(hue);
+  document.getElementById(`${slot}-foot`).textContent = foot;
+}
+
+/* Daily marks are published for all books; a live comparison needs a benchmark. */
+const hasLiveBenchmark = s =>
+  !!s && !!s.live && s.live.nav != null && s.live.benchmark_return != null;
+
+function syncHeroSelector(s) {
+  const available = hasLiveBenchmark(s);
+  document.getElementById('hero-tools').hidden = !available;
+  if (!available) HERO_VIEW = 'backtest';
+}
+
+function swapHeroCards(view) {
+  const s = SNAP;
+  if (!s) return;
+  if (view === 'live' && !hasLiveBenchmark(s)) view = 'backtest';
+  HERO_VIEW = view;
+
+  document.getElementById('sel-backtest')
+    .setAttribute('aria-pressed', String(view === 'backtest'));
+  document.getElementById('sel-live')
+    .setAttribute('aria-pressed', String(view === 'live'));
+  const banner = document.getElementById('live-context-banner');
+  banner.hidden = view !== 'live';
+  if (view === 'live' && s.headline) {
+    const h = s.headline;
+    banner.innerHTML = `<strong>${esc(CFG.label)} — ${esc(liveLabel())} (${s.holdings.positions.length} ${simulatedBook() ? 'target names' : 'holdings'}):</strong> `
+      + `Live start ${esc(s.live.inception_date)}; daily marks through ${esc(s.live.last_updated)}. `
+      + `Historical window ${esc(h.window_start)} to ${esc(h.window_end)} (${h.months_oos} out-of-sample months): ${esc(headlineSummary(h))}. `
+      + 'Historical results do not predict live-track performance.';
+  }
+
+  if (view === 'live') {
+    const live = s.live;
+    const bps = Math.round(live.excess_return * 10000);
+    const iwmBps = live.excess_return_iwm != null ? Math.round(live.excess_return_iwm * 10000) : null;
+    setCard('k-cagr', {
+      label: `${liveLabel()} Return`,
+      value: signedPct(live.since_inception_return),
+      foot: `${simulatedBook() ? 'Source NAV' : 'NAV'} ${money2(live.nav)} · Live start ${live.inception_date}`,
+      hue: signHue(live.since_inception_return)
+    });
+    setCard('k-sharpe', {
+      label: 'S&P 500 (SPY)',
+      value: signedPct(live.benchmark_return),
+      foot: `Return difference: ${bps >= 0 ? '+' : ''}${esc(bps)} bps · SPY total return`,
+      hue: 'v-amber'
+    });
+    setCard('k-dd', {
+      label: 'Russell 2000 (IWM)',
+      value: live.benchmark_return_iwm != null ? signedPct(live.benchmark_return_iwm) : '—',
+      foot: iwmBps != null ? `Return difference: ${iwmBps >= 0 ? '+' : ''}${esc(iwmBps)} bps · Small-cap benchmark` : 'IWM comparison unavailable',
+      hue: 'v-amber'
+    });
+    setCard('k-edge', {
+      label: 'Time Horizon',
+      html: `${esc(live.days_live)} <span class="unit">trading sessions</span>`,
+      foot: `${liveLabel()} · since ${live.inception_date}`,
+      hue: 'v-violet'
+    });
+    return;
+  }
+
+  const h = s.headline;
+  const bps = h.excess_vs_spy_bps;
+  setCard('k-cagr', {
+    label: 'Annualized Return',
+    value: pct(h.cagr),
+    foot: `S&P 500 ${pct(h.benchmark_cagr)} over the same window`,
+    hue: 'v-blue'
+  });
+  setCard('k-sharpe', {
+    label: 'Sharpe Ratio',
+    value: h.sharpe.toFixed(3),
+    foot: `S&P 500 ${h.benchmark_sharpe.toFixed(3)} · daily, rf = 0`,
+    hue: 'v-violet'
+  });
+  setCard('k-dd', {
+    label: `Max Drawdown (${h.max_drawdown_basis})`,
+    value: pct(h.max_drawdown, 1),
+    foot: `Month-end sampled · ${pct(h.max_drawdown_daily, 1)} on daily marks`,
+    hue: 'v-amber'
+  });
+  setCard('k-edge', {
+    label: 'Excess vs S&P 500',
+    html: `${bps >= 0 ? '+' : ''}${esc(bps)} <span class="unit">bps/yr</span>`,
+    foot: `S&P 500 max drawdown ${pct(h.benchmark_max_drawdown, 1)} (daily marks)`,
+    hue: 'v-green'
+  });
+}
+
+function initHeroSelector() {
+  document.getElementById('hero-tools').addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    swapHeroCards(button.id === 'sel-live' ? 'live' : 'backtest');
+  });
+}
+
+function renderHeadline(s) {
+  const h = s.headline;
+
+  renderBookCopy(s);
+  const ec = s.equity_curve;
+  document.getElementById('curve-sub').textContent =
+    `Walk-forward backtest chart: ${rangeOf(ec.backtest)} (includes baseline; strategy start ${h.window_start}). `
+    + `2026 simulation chart: ${rangeOf(ec.simulation)} (includes baseline). `
+    + `${liveLabel()}: ${rangeOf(ec.live)}.`;
+
+  document.getElementById('about-method').textContent =
+    `Headline figures cover ${h.months_oos} out-of-sample months (${h.window_start} to ${h.window_end}), `
+    + 'including the walk-forward backtest and 2026 simulation, net of modeled transaction costs. '
+    + 'The benchmark is SPY dividend-adjusted close over the same window. Live-track results are reported separately.';
+
+  // Re-asserted on every model load, so a swap into a book without a live benchmark
+  // cannot strand the page on a view it can no longer fill.
+  syncHeroSelector(s);
+  swapHeroCards(HERO_VIEW);
+}
+
+function renderPill(s) {
+  const dot = document.getElementById('dot');
+  const days = tradingDaysSince(s.as_of);
+  dot.classList.remove('marked', 'fresh', 'warn', 'stale');
+  dot.classList.add(days === 0 ? 'fresh' : days <= 5 ? 'warn' : 'stale');
+  dot.title = `Daily mark as of ${s.as_of} (${days} trading session${days === 1 ? '' : 's'} ago)`;
+
+  const live = s.live;
+  if (live && live.nav != null) {
+    document.getElementById('pill-nav').textContent =
+      `${money2(live.nav * CFG.scale)} · ${signedPct(live.since_inception_return)}`;
+    document.getElementById('pill-sub').textContent =
+      `${liveLabel()} · Daily mark ${s.as_of} · ${live.days_live} trading sessions`;
+  } else {
+    document.getElementById('pill-nav').textContent = 'Awaiting first mark';
+    document.getElementById('pill-sub').textContent = `Data as of ${s.as_of}`;
+  }
+}
+
+function renderRegimeBanner(snap) {
+  const banner = document.getElementById('regime-banner');
+  if (!banner) return;
+  const r = snap && snap.regime;
+  if (!r) { banner.hidden = true; return; }
+  banner.dataset.state = r.state || 'risk_on';
+  banner.hidden = false;
+  document.getElementById('rb-state').textContent =
+    (r.state || 'unavailable').replace(/_/g, ' ').toUpperCase();
+  document.getElementById('rb-exposure').textContent =
+    r.gross_exposure != null ? (+((r.gross_exposure)*100).toFixed(1)) + '% target exposure' : 'Exposure unavailable';
+  document.getElementById('rb-eq-wt').textContent =
+    r.equity_weight != null ? Math.round(r.equity_weight*100)+'%' : '—';
+  document.getElementById('rb-macro-wt').textContent =
+    r.macro_etf_weight != null ? Math.round(r.macro_etf_weight*100)+'%' : '—';
+  document.getElementById('rb-longs').textContent =
+    r.macro_longs && r.macro_longs.length ? r.macro_longs.join(' · ') : 'None';
+  document.getElementById('rb-cash').textContent =
+    r.macro_cash && r.macro_cash.length ? r.macro_cash.join(' · ') : '—';
+  document.getElementById('rb-asof').textContent =
+    r.as_of ? 'as of ' + r.as_of : '';
+}
+
+function renderEquity(s) {
+  const scale = CFG.scale;
+  const C = themeColors();
+  // Every series goes through this one mapper, so the vs-SPY tooltip below stays a
+  // ratio of two equally scaled numbers. Scaling only one of them would corrupt it.
+  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale}));
+  const ec = s.equity_curve;
+
+  document.getElementById('curve-title').textContent = 'Growth of ' + money(s.live.inception_nav * scale);
+  if (scale !== 1) {
+    const badge = document.getElementById('scale-badge');
+    badge.textContent = `Simulated · ${scale}× scale`;
+    badge.hidden = false;
+  }
+
+  const spy = toXY(ec.spy);
+  const spyAt = new Map(spy.map(p => [p.x, p.y]));
+
+  const datasets = [
+    {
+      label: 'S&P 500',
+      data: spy,
+      borderColor: C.bench,
+      backgroundColor: C.benchFill,
+      borderWidth: 1,
+      fill: 'origin',
+      pointRadius: 0,
+      pointHitRadius: 0,
+      order: 4
+    },
+    {
+      label: 'Walk-forward backtest',
+      data: toXY(ec.backtest),
+      borderColor: C.grey,
+      borderWidth: 1.6,
+      borderDash: [5, 5],
+      fill: false,
+      pointRadius: 0,
+      pointHitRadius: 0,
+      order: 3
+    },
+    {
+      label: '2026 simulation',
+      data: toXY(ec.simulation),
+      borderColor: C.amber,
+      borderWidth: 2,
+      fill: false,
+      pointRadius: 0,
+      pointHitRadius: 0,
+      order: 2
+    },
+    {
+      label: liveLabel(),
+      data: toXY(ec.live),
+      borderColor: C.blue,
+      borderWidth: 2.5,
+      fill: false,
+      pointRadius: 0,
+      pointHitRadius: 0,
+      glow: true,
+      order: 1
+    }
+  ];
+
+  const events = [
+    {date: '2007-10-01', label: 'GFC reference', color: '#ef4444'},
+    {date: '2020-02-19', label: 'COVID', color: '#ef4444'},
+    {date: '2022-01-03', label: '2022 bear market', color: '#f97316'}
+  ];
+  if (s.live && s.live.inception_date) {
+    events.push({date: s.live.inception_date, label: simulatedBook() ? 'Live start (simulated)' : 'Live start (paper account)', color: C.blue});
+  }
+
+  equityChart = new Chart(document.getElementById('equity'), {
+    type: 'line',
+    data: {datasets},
+    plugins: [eventLines, glowLine],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode: 'index', intersect: false, axis: 'x'},
+      layout: {padding: {top: 26}},
+      scales: {
+        x: {
+          type: 'time',
+          time: {unit: 'year', tooltipFormat: 'dd MMM yyyy'},
+          grid: {color: C.grid, drawTicks: false},
+          border: {color: C.axisBorder},
+          ticks: {maxRotation: 0, autoSkipPadding: 22}
+        },
+        // No min/max here on purpose. Chart.js auto-fits the domain to the data, which is
+        // what keeps the 2009 trough and the 2021 peak on the canvas; a hardcoded bound
+        // would silently clip whichever extreme moved past it as the history grows.
+        y: {
+          type: 'logarithmic',
+          grid: {color: C.grid, drawTicks: false},
+          border: {display: false},
+          ticks: {callback: v => moneyTick(v)}
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {usePointStyle: true, pointStyle: 'line', boxWidth: 26, padding: 15, color: C.ink2}
+        },
+        eventLines: {events, labelBg: C.eventLabelBg},
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              return `${ctx.dataset.label}: ${money(ctx.parsed.y)}`;
+            },
+            /* The benchmark series is published only as far as the last marked month, so
+               it runs out before the live curve does. Returning '' for that case made the
+               comparison line vanish across the whole live window with no explanation,
+               which reads as a broken tooltip rather than as missing data. Say which it
+               is; do not carry the last SPY level forward, because a flat benchmark over
+               the gap is an invented number, not a conservative one. */
+            afterBody(items) {
+              if (!items.length) return '';
+              const port = items.find(i => i.dataset.label !== 'S&P 500');
+              if (!port) return '';
+              const bench = spyAt.get(items[0].parsed.x);
+              if (bench == null) return 'S&P 500 comparison unavailable for this date';
+              const rel = port.parsed.y / bench - 1;
+              return `Relative curve value vs S&P 500: ${signedPct(rel, 1)}`;
+            }
+          }
+        },
+        zoom: {
+          pan: {enabled: true, mode: 'x', modifierKey: null},
+          zoom: {wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x'},
+          limits: {x: {minRange: 1000 * 60 * 60 * 24 * 30}}
+        }
+      },
+      onDoubleClick: null
+    }
+  });
+
+  if (s.live && s.live.rebase_factor > 1) {
+    document.getElementById('rebase-note').textContent =
+      `The ${liveLabel()} curve is rebased to continue the historical simulation on one axis. `
+      + (simulatedBook()
+        ? `The simulated starting NAV is ${money(s.live.inception_nav)}, displayed at ${money(s.live.inception_nav * scale)} notional (${scale}×). `
+        : `The paper account was funded with ${money(s.live.inception_nav)}. `)
+      + 'The header and holdings statistics show account NAV without the chart rebase.';
+  }
+}
+
+/* Bound once at boot, not per render. These live on DOM nodes that outlive any single
+   chart instance, so registering them inside renderEquity stacked a fresh copy on every
+   model swap and fired the handler N times per click. They reach the chart through the
+   module global, which the rebuild reassigns, so one binding stays correct forever. */
+function initEquityControls() {
+  const resetZoom = () => { if (equityChart) equityChart.resetZoom(); };
+  document.getElementById('equity').addEventListener('dblclick', resetZoom);
+  document.getElementById('btn-reset').addEventListener('click', resetZoom);
+
+  const btnLog = document.getElementById('btn-log');
+  const btnLin = document.getElementById('btn-lin');
+  const setScale = type => {
+    if (!equityChart) return;
+    equityChart.options.scales.y.type = type;
+    equityChart.update();
+    btnLog.setAttribute('aria-pressed', String(type === 'logarithmic'));
+    btnLin.setAttribute('aria-pressed', String(type === 'linear'));
+  };
+  btnLog.addEventListener('click', () => setScale('logarithmic'));
+  btnLin.addEventListener('click', () => setScale('linear'));
+}
+
+function renderCrash(s) {
+  const body = document.getElementById('crash-body');
+  body.innerHTML = '';
+  s.crash_table.forEach(r => {
+    const win = r.edge_pp > 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td>${r.period}</td>` +
+      `<td class="num">${r.strategy_max_drawdown_monthly != null ? pct(r.strategy_max_drawdown_monthly, 1) : '—'}</td>` +
+      `<td class="num">${pct(r.strategy, 1)}</td>` +
+      `<td class="num">${r.spy_max_drawdown_monthly != null ? pct(r.spy_max_drawdown_monthly, 1) : '—'}</td>` +
+      `<td class="num">${pct(r.spy, 1)}</td>` +
+      `<td class="num ${win ? 'edge-pos' : 'edge-neg'}">${win ? '✅' : '⚠️'} ` +
+      `${(r.edge_pp >= 0 ? '+' : '') + r.edge_pp.toFixed(1)}pp</td>`;
+    body.appendChild(tr);
+  });
+
+  const losses = s.crash_table.filter(r => r.edge_pp <= 0).map(r => r.period);
+  document.getElementById('crash-note').textContent = losses.length
+    ? `Listed windows where strategy drawdown was at least as deep as the benchmark: ${losses.join(', ')}.`
+    : 'Strategy drawdown was shallower than the benchmark in each listed window.';
+}
+
+function renderSectors(s) {
+  const sh = s.sector_history;
+  document.getElementById('sector-sub').textContent = `${rangeOf(sh.months.map(month => ({month})), 'month')}. Sector weights come from a reference configuration through mid-2026 and from the model’s recorded rebalances after that, not the selected book’s historical holdings. Bar height is total equity exposure.`;
+  const C = themeColors();
+  const palette = sectorColors();
+  const shell = document.getElementById('sector-shell');
+  // Give each month ~13px so individual bars stay legible, then scroll horizontally.
+  shell.style.width = Math.max(900, sh.months.length * 13) + 'px';
+
+  const datasets = sh.sectors.map((name, i) => ({
+    label: name,
+    data: sh.weights[name].map(v => v * 100),
+    backgroundColor: palette[i % palette.length],
+    // The separator between stacked segments has to be the opaque colour *behind* the
+    // canvas, not the page colour -- over a light card the page grey would read as a
+    // dirty line between every pair of sectors.
+    borderColor: C.surface,
+    borderWidth: {top: 1, right: 0, bottom: 0, left: 0},
+    borderSkipped: false
+  }));
+
+  sectorChart = new Chart(document.getElementById('sectors'), {
+    type: 'bar',
+    data: {labels: sh.months, datasets},
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode: 'index', intersect: false},
+      scales: {
+        x: {
+          stacked: true,
+          grid: {display: false},
+          border: {color: C.axisBorder},
+          // Thin the ticks to one per January *before* layout runs. Leaving 248 ticks in
+          // place and blanking them in the callback sends the layout solver into a
+          // non-converging loop that freezes the renderer.
+          afterBuildTicks(scale) {
+            scale.ticks = scale.ticks.filter(t => {
+              const m = sh.months[t.value];
+              return m && m.endsWith('-01');
+            });
+          },
+          ticks: {
+            maxRotation: 0,
+            callback(v) {
+              const m = this.getLabelForValue(v);
+              return m ? m.slice(0, 4) : '';
+            }
+          }
+        },
+        // max:100 is a semantic ceiling, not a crop: these are long-only sector weights and
+        // the measured maximum across all 248 months is 98.5%, the balance being cash. It
+        // is the axis saying "this is the whole book", not a bound clipping real data.
+        y: {
+          stacked: true,
+          max: 100,
+          grid: {color: C.grid, drawTicks: false},
+          border: {display: false},
+          ticks: {callback: v => v + '%'}
+        }
+      },
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y < 0.05 ? null : `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
+            footer(items) {
+              const total = items.reduce((a, i) => a + i.parsed.y, 0);
+              return `Total equity exposure: ${total.toFixed(1)}%`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const legend = document.getElementById('sector-legend');
+  legend.innerHTML = '';
+  sh.sectors.forEach((name, i) => {
+    const el = document.createElement('span');
+    el.innerHTML = `<i class="swatch" style="background:${palette[i % palette.length]}"></i>${esc(name)}`;
+    legend.appendChild(el);
+  });
+
+  if (sh.folded_into_other && sh.folded_into_other.length) {
+    document.getElementById('sector-note').textContent =
+      `"Other" combines these smaller sectors: ${sh.folded_into_other.join(', ')}.`;
+  }
+}
+
+function heatColor(v, C) {
+  const t = Math.max(-1, Math.min(1, v / 0.10));
+  return mixRgb(C.heatNeutral, t >= 0 ? C.heatPos : C.heatNeg, Math.abs(t));
+}
+
+/* One cell, background and ink together, so the two can never drift apart. */
+function heatCell(v, cls, title, dp, C) {
+  const bg = heatColor(v, C);
+  return `<div class="heat-cell${cls}" style="background:${rgbCss(bg)};color:${inkOn(bg)}${dp}" `
+       + `title="${esc(title)}">${(v * 100).toFixed(1)}</div>`;
+}
+
+function renderHeatmap(s) {
+  const wrap = document.getElementById('heat-grid');
+  const historical = s.monthly_returns.filter(r => r.month <= s.headline.window_end.slice(0, 7));
+  const liveMonths = s.monthly_returns.filter(r => r.month > s.headline.window_end.slice(0, 7));
+  const partial = s.monthly_returns.filter(r => r.partial).map(r => r.month);
+  document.getElementById('heat-sub').textContent = `${rangeOf(s.monthly_returns, 'month')}: `
+    + `${historical.length} historical months (${rangeOf(historical, 'month')}; walk-forward backtest and 2026 simulation), `
+    + `${liveMonths.length} ${liveLabel()} months (${rangeOf(liveMonths, 'month')}). `
+    + `Partial months: ${partial.length ? partial.join(', ') : 'none'}. `
+    + 'Year totals compound the displayed months; a year can combine historical and live-track returns. Values are percentages; each pair shows portfolio above SPY.';
+  const C = themeColors();
+
+  const byYear = {};
+  const periodNotes = new Map(s.monthly_returns.map(r => [r.month, (r.month <= s.equity_curve.backtest.at(-1).d.slice(0, 7) ? 'Walk-forward backtest' : r.month <= s.headline.window_end.slice(0, 7) ? '2026 simulation' : liveLabel()) + (r.partial ? '; partial month' : '')]));
+  s.monthly_returns.forEach(r => {
+    const [y, m] = r.month.split('-');
+    if (!byYear[y]) byYear[y] = { strategy: [], spy: [] };
+    byYear[y].strategy[parseInt(m, 10) - 1] = r.strategy;
+    byYear[y].spy[parseInt(m, 10) - 1] = r.spy;
+  });
+
+  const years = Object.keys(byYear).sort().reverse();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  let html = `<table class="heat-table">
+    <thead>
+      <tr>
+        <th></th>
+        ${months.map(m => `<th>${m}</th>`).join('')}
+        <th style="padding-left:12px;font-weight:600;color:var(--ink);">Year / YTD</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  years.forEach(y => {
+    /* Geometric, not additive: a missing month contributes no factor, which is the
+       identity for a product and is what makes a partial year like 2026 (Jan-Jun) come
+       out right. Verified against the equity curve for every year on file -- worst
+       divergence 0.0003pp, four orders below the one decimal shown.
+
+       The guard is `!= null`, deliberately loose, so it catches null as well as a hole.
+       JSON cannot express undefined but it can express null, and under a `!== undefined`
+       test a null month passes as present, contributes 1 + null = 1 (vanishing from the
+       product without trace) and then prints as a "0.0" cell indistinguishable from a
+       genuinely flat month. Missing data must render as missing, never as zero. */
+    let stratYtd = 1, spyYtd = 1, hasStrat = false, hasSpy = false;
+    for (let m = 0; m < 12; m++) {
+      if (byYear[y].strategy[m] != null) { stratYtd *= (1 + byYear[y].strategy[m]); hasStrat = true; }
+      if (byYear[y].spy[m] != null)      { spyYtd   *= (1 + byYear[y].spy[m]);      hasSpy   = true; }
+    }
+    stratYtd -= 1; spyYtd -= 1;
+
+    const empty = '<td><div class="heat-cell empty"></div></td>';
+    const blank = cls => `<td style="padding-left:12px;"><div class="heat-cell${cls}"></div></td>`;
+
+    html += `<tr><td rowspan="2" class="heat-year-col">${esc(y)}</td>`;
+    for (let m = 0; m < 12; m++) {
+      const val = byYear[y].strategy[m];
+      html += val == null ? empty
+        : `<td>${heatCell(val, '', `Portfolio · ${y}-${String(m+1).padStart(2,'0')} (${periodNotes.get(`${y}-${String(m+1).padStart(2,'0')}`)}): ${signedPct(val)}`, ';font-weight:500', C)}</td>`;
+    }
+    html += hasStrat
+      ? `<td style="padding-left:12px;">${heatCell(stratYtd, '', `Portfolio · ${y} displayed months compounded: ${signedPct(stratYtd)}`, ';font-weight:700', C)}</td>`
+      : blank('');
+    html += `</tr><tr>`;
+
+    for (let m = 0; m < 12; m++) {
+      const val = byYear[y].spy[m];
+      html += val == null ? empty
+        : `<td>${heatCell(val, ' spy-cell', `S&P 500 · ${y}-${String(m+1).padStart(2,'0')} (${periodNotes.get(`${y}-${String(m+1).padStart(2,'0')}`)}): ${signedPct(val)}`, '', C)}</td>`;
+    }
+    html += hasSpy
+      ? `<td style="padding-left:12px;">${heatCell(spyYtd, ' spy-cell', `S&P 500 · ${y} displayed months compounded: ${signedPct(spyYtd)}`, ';font-weight:700', C)}</td>`
+      : blank(' spy-cell');
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+/* Positions entered within the last 30 days are published as LOCKED-#n with
+   sector, weight and value only; price and share count are withheld. */
+const EMBARGO_NOTE = 'Active positions are embargoed for 30 days to protect live execution.';
+
+function renderHoldings(s) {
+  const h = s?.holdings;
+  const positions = s?.holdings?.positions;
+  if (!h || typeof h !== 'object' || !Array.isArray(positions)) {
+    throw new TypeError('snapshot.holdings.positions must be an array');
+  }
+  const stringFields = ['ticker', 'name', 'sector', 'rationale'];
+  positions.forEach((position, index) => {
+    if (!position || typeof position !== 'object') {
+      throw new TypeError(`holdings.positions[${index}] must be an object`);
+    }
+    stringFields.forEach(field => {
+      if (typeof position[field] !== 'string') {
+        throw new TypeError(`holdings.positions[${index}].${field} must be a string`);
+      }
+    });
+    for (const field of ['weight', 'value']) {
+      if (typeof position[field] !== 'number' || !Number.isFinite(position[field])) {
+        throw new TypeError(`holdings.positions[${index}].${field} must be a finite number`);
+      }
+    }
+    if (position.shares === undefined || (position.shares !== null && !Number.isInteger(position.shares))) {
+      throw new TypeError(`holdings.positions[${index}].shares must be an integer`);
+    }
+    if (position.price === undefined || (position.price !== null && (typeof position.price !== 'number' || !Number.isFinite(position.price)))) {
+      throw new TypeError(`holdings.positions[${index}].price must be a finite number`);
+    }
+  });
+
+  const priceText = h.price_as_of ? `Priced as of ${h.price_as_of}` : 'Position price date unavailable; prices omitted';
+  const rebalanceDate = h.last_rebalance || '—';
+  const targetDate = h.target_as_of ? ` · Model scan ${h.target_as_of}` : '';
+  const filingDate = h.latest_filing_date ? ` · Latest SEC filing ${h.latest_filing_date}` : '';
+  document.getElementById('hold-sub').textContent =
+    `${priceText} · Target rebalance date ${rebalanceDate}${targetDate}${filingDate}`;
+
+  const live = s.live || {};
+  const scale = CFG.scale;
+  document.getElementById('l-nav-k').textContent = scale === 1 ? 'Paper Account NAV' : 'Live (simulated) NAV';
+  document.getElementById('l-nav').textContent = live.nav != null ? money2(live.nav * scale) : '—';
+  const retEl = document.getElementById('l-ret');
+  if (live.since_inception_return != null) {
+    retEl.textContent = signedPct(live.since_inception_return);
+    retEl.style.color = live.since_inception_return >= 0 ? 'var(--green)' : 'var(--red)';
+  } else {
+    retEl.textContent = '—';
+  }
+  document.getElementById('l-ret-k').textContent = scale === 1 ? 'Return Since Live Start' : 'Live (simulated) Return';
+  document.getElementById('l-days-k').textContent = scale === 1 ? 'Trading Sessions' : 'Live (simulated) Sessions';
+  document.getElementById('l-days').textContent = live.days_live != null ? live.days_live : '—';
+
+  // Colour holdings by sector using the same validated slots as the rotation chart, so a
+  // sector reads as one colour across the whole page. The rotation chart folds its
+  // smallest sleeves into "Other", so the books legitimately hold sectors it never lists
+  // (Chemicals, Energy, Consumer Durables). Append those in sorted order rather than
+  // dropping them to grey -- it was hitting many institutional names.
+  const known = (s.sector_history && s.sector_history.sectors) || [];
+  const extra = [...new Set(positions.map(p => p.sector))]
+    .filter(name => name && known.indexOf(name) < 0)
+    .sort();
+  const order = known.concat(extra);
+  const palette = sectorColors();
+  const fallback = token('--muted');
+  const colorFor = sector => {
+    const i = order.indexOf(sector);
+    return i >= 0 ? palette[i % palette.length] : fallback;
+  };
+
+  // Copy before sorting so the snapshot array is never reordered under anything else
+  // reading it. The institutional book is equal-weighted, so the comparator
+  // returns 0 throughout and the original order survives -- Array#sort has been
+  // required to be stable since ES2019.
+  const sorted = [...positions].sort((a, b) => (Number(b.weight) || 0) - (Number(a.weight) || 0));
+  const weights = sorted.map(p => Number(p.weight) || 0);
+  // Guard the divisor: an empty book would otherwise make Math.max return -Infinity and
+  // every bar width NaN.
+  const max = weights.length ? Math.max(...weights) : 0;
+  const denom = max > 0 ? max : 1;
+
+  const box = document.getElementById('holdings');
+  const COLLAPSED = 25;
+
+  const renderRows = limit => {
+    box.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    sorted.slice(0, limit).forEach(p => {
+      const c = colorFor(p.sector);
+      const w = Number(p.weight) || 0;
+      const metaParts = [];
+      if (p.shares != null) metaParts.push(`${p.shares.toLocaleString('en-US')} shares`);
+      if (p.price != null) metaParts.push(`${money2(p.price)} price`);
+      if (p.value != null) metaParts.push(`${money2(p.value * scale)} value`);
+      const metaHtml = metaParts.length > 0
+        ? `<div class="position-meta">${metaParts.join(' · ')}</div>`
+        : '';
+      const row = document.createElement('div');
+      row.className = 'holding';
+      row.innerHTML =
+        `<div class="tkr">${esc(p.ticker)}</div>` +
+        `<div class="co-col" style="display:flex;flex-direction:column;justify-content:center;overflow:hidden;">` +
+          `<div class="co" title="${esc(p.name)}">${esc(p.name)}</div>` +
+          metaHtml +
+          (p.rationale ? `<div class="rationale" style="font-size:0.75rem;color:var(--muted);margin-top:2px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.rationale)}</div>` : '') +
+        `</div>` +
+        `<div><span class="chip" style="color:${c}">${esc(p.sector)}</span></div>` +
+        // This bar is scaled against the *largest holding*, not against the book, so a
+        // full bar means "the biggest position here" and not "100% of the portfolio" --
+        // on the equal-weighted institutional book every weight is identical and every bar is
+        // therefore full. The percentage beside it is the true portfolio weight; the
+        // title says which is which so the two cannot be misread as the same number.
+        `<div class="wbar">` +
+          // Floor the fill so a real but tiny weight still reads as a bar (shadow's
+          // smallest is 0.19% of its largest, a sub-pixel sliver), and clamp the top.
+          // w/denom cannot exceed 1 by construction, since denom is max(weights) -- the
+          // ceiling is a guard against a future divisor change, not a live overflow.
+          `<span class="track" title="Bar is relative to the largest holding (${pct(max, 1)}); the figure is the portfolio weight">` +
+            `<span class="fill" style="width:${Math.min(100, Math.max((w / denom) * 100, 1.2))}%;background:${c}"></span>` +
+          `</span>` +
+          `<span class="pct">${pct(w, w > 0 && w < 0.01 ? 2 : 1)}</span>` +
+        `</div>`;
+      frag.appendChild(row);
+    });
+    box.appendChild(frag);
+  };
+
+  renderRows(COLLAPSED);
+  if (sorted.length > COLLAPSED) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'show-all';
+    more.textContent = `Show all ${sorted.length} holdings`;
+    // renderRows clears the container, which takes the button with it.
+    more.addEventListener('click', () => renderRows(sorted.length), {once: true});
+    box.appendChild(more);
+  }
+
+  const disclaimer = document.getElementById('hold-disclaimer');
+  disclaimer.textContent = scale === 1
+    ? 'Paper-ledger positions at the published mark. No real capital is deployed.'
+    : `Current model targets are shown at ${money((live.inception_nav || CFG.base / scale) * scale)} display notional (${scale}× the source account). `
+      + 'Position values are target weight times NAV, not executed lots or the fixed holdings underlying the buy-and-hold live track. '
+      + 'Scaling does not model additional market impact or establish trading capacity.';
+  const embargoed = positions.filter(p => /^LOCKED-#\d+$/.test(p.ticker)).length;
+  if (embargoed > 0) {
+    disclaimer.textContent += ` ${EMBARGO_NOTE} ${embargoed} of ${positions.length} positions are shown by sector, weight and value only.`;
+  }
+}
+
+function renderSectorConviction(s) {
+  const section = document.getElementById('sector-conviction-section');
+  const grid = document.getElementById('sector-conviction');
+  const conviction = s && s.sector_conviction;
+  grid.replaceChildren();
+
+  if (!conviction || typeof conviction !== 'object' || Array.isArray(conviction)) {
+    section.hidden = true;
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  Object.keys(conviction).sort().forEach(sector => {
+    const names = conviction[sector];
+    if (!sector || !Array.isArray(names) || names.length === 0) return;
+
+    const card = document.createElement('article');
+    card.className = 'sector-conviction-card';
+    const heading = document.createElement('h3');
+    heading.textContent = sector;
+    card.appendChild(heading);
+
+    const list = document.createElement('ul');
+    names.slice(0, 5).forEach(position => {
+      if (!position || typeof position.ticker !== 'string' ||
+          typeof position.name !== 'string' || !position.ticker || !position.name) return;
+      const row = document.createElement('li');
+      const ticker = document.createElement('span');
+      ticker.className = 'conviction-ticker';
+      ticker.textContent = position.ticker;
+      const name = document.createElement('span');
+      name.className = 'conviction-name';
+      name.title = position.name;
+      name.textContent = position.name;
+      row.append(ticker, name);
+      list.appendChild(row);
+    });
+    if (list.children.length === 0) return;
+    card.appendChild(list);
+    fragment.appendChild(card);
+  });
+
+  grid.appendChild(fragment);
+  section.hidden = grid.children.length === 0;
+}
+
+/* ---------- theme toggle ----------
+   The charts are repainted by mutating their existing options and calling update('none')
+   rather than by rebuilding them. Destroying and re-creating would be simpler to write and
+   would silently throw away the reader's state: the equity chart carries a pan/zoom window
+   and a log-vs-linear choice, and losing those on a theme switch is a worse bug than a
+   stale colour. 'none' skips the animation so the swap reads as instant.
+
+   The heatmap is the exception -- it is a string of innerHTML with no state to preserve,
+   so it is simply re-rendered, which is also what re-derives each cell's ink. */
+function repaintCharts() {
+  const C = themeColors();
+  applyDefaults();
+
+  if (equityChart) {
+    const o = equityChart.options;
+    o.scales.x.grid.color = C.grid;
+    o.scales.x.border.color = C.axisBorder;
+    o.scales.y.grid.color = C.grid;
+    o.plugins.legend.labels.color = C.ink2;
+    o.plugins.eventLines.labelBg = C.eventLabelBg;
+    o.plugins.eventLines.events.forEach(ev => {
+      if (ev.date === SNAP.live.inception_date) ev.color = C.blue;
+    });
+    const ds = equityChart.data.datasets;
+    ds[0].borderColor = C.bench;
+    ds[0].backgroundColor = C.benchFill;
+    ds[1].borderColor = C.grey;
+    ds[2].borderColor = C.amber;
+    ds[3].borderColor = C.blue;
+    equityChart.update('none');
+  }
+
+  if (sectorChart) {
+    const palette = sectorColors();
+    sectorChart.options.scales.x.border.color = C.axisBorder;
+    sectorChart.options.scales.y.grid.color = C.grid;
+    sectorChart.data.datasets.forEach((d, i) => {
+      d.backgroundColor = palette[i % palette.length];
+      d.borderColor = C.surface;
+    });
+    sectorChart.update('none');
+    document.querySelectorAll('#sector-legend .swatch').forEach((el, i) => {
+      el.style.background = palette[i % palette.length];
+    });
+  }
+
+  if (SNAP) renderHeatmap(SNAP);
+
+  // Sector chips in the holdings list are coloured inline from the same slots.
+  const known = (SNAP && SNAP.sector_history && SNAP.sector_history.sectors) || [];
+  if (SNAP && SNAP.holdings) {
+    const palette = sectorColors();
+    const extra = [...new Set(SNAP.holdings.positions.map(p => p.sector))]
+      .filter(name => name && known.indexOf(name) < 0)
+      .sort();
+    const order = known.concat(extra);
+    const fallback = token('--muted');
+    document.querySelectorAll('#holdings .chip').forEach(el => {
+      const i = order.indexOf(el.textContent);
+      el.style.color = i >= 0 ? palette[i % palette.length] : fallback;
+    });
+  }
+}
+
+function setTheme(light) {
+  document.documentElement.classList.toggle('theme-light', light);
+  // Mirrored onto <body> as well: the pre-paint script has to target <html> because
+  // <body> does not exist yet at that point, and keeping both in sync means a
+  // body-scoped selector behaves the same as a root-scoped one.
+  document.body.classList.toggle('theme-light', light);
+  document.getElementById('color-scheme')
+    .setAttribute('content', light ? 'light dark' : 'dark light');
+
+  const btn = document.getElementById('theme-toggle');
+  const next = light ? 'Switch to dark theme' : 'Switch to light theme';
+  btn.setAttribute('aria-pressed', String(light));
+  btn.setAttribute('aria-label', next);
+  btn.title = next;
+
+  try { localStorage.setItem('theme', light ? 'light' : 'dark'); } catch (e) { /* private mode */ }
+}
+
+function initTheme() {
+  const light = document.documentElement.classList.contains('theme-light');
+  setTheme(light);
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    setTheme(!document.documentElement.classList.contains('theme-light'));
+    repaintCharts();
+  });
+}
+
+/* ---------- boot ---------- */
+function fail(msg) {
+  document.getElementById('spinner').hidden = true;
+  document.getElementById('state-msg').textContent = msg;
+}
+
+/* ---------- accounts ----------
+   Each book publishes its own snapshot with its own live track and its own
+   measured history. Never copy one file's history into another.
+
+   All three snapshots are built $10,000-based. `scale` restates the two model
+   books at an institutional notional and is DISPLAY ONLY -- it is applied
+   uniformly to every series and NAV read from the file, and nothing writes it
+   back. Every published statistic is a ratio of NAV levels, so a constant
+   multiplier cancels exactly. Retail holds whole shares, so its weights are lumpy
+   because of its size and it stays at 1x.
+
+   All books are priced and published by the private daily service. */
+const ACCOUNTS = {
+  '': {
+    file: 'portfolio_snapshot.json',
+    label: 'Retail',
+    scale: 1,
+    base: 10000,
+    marked: false,
+    description: 'Paper-ledger positions with integer shares.'
+  },
+  institutional: {
+    file: 'institutional_snapshot.json',
+    label: 'Institutional',
+    scale: 500,
+    base: 5000000,
+    marked: false,
+    description: 'The model\u2019s current target allocation, held at equal weight.'
+  },
+  shadow: {
+    file: 'shadow_snapshot.json',
+    label: 'Shadow',
+    scale: 500,
+    base: 5000000,
+    marked: false,
+    description: 'An alternative drawdown-controlled risk-sizing model.'
+  }
+};
+
+/* The institutional book was published under ?account=production before it got its own
+   snapshot file. Links to it are in the wild, so the old key resolves to the new one
+   rather than silently falling back to Retail. */
+const ACCOUNT_ALIASES = {production: 'institutional'};
+
+/* Resolved once in boot(), then read by the renderers. Deriving the scale per call
+   site instead lets the three copies drift apart, which is how the chart and the
+   header pill end up quoting different notionals. */
+let CFG = ACCOUNTS[''];
+
+function resolveAccount() {
+  const requested = new URLSearchParams(window.location.search).get('account');
+  const resolved = ACCOUNT_ALIASES[requested] || requested;
+  return Object.prototype.hasOwnProperty.call(ACCOUNTS, resolved) ? resolved : '';
+}
+
+function renderAccountTabs(account) {
+  /* Clear before setting. aria-current is what the active-segment styling keys off, so
+     only adding it would light up every model the visitor has looked at. */
+  document.querySelectorAll('#account-tabs .tab').forEach(tab => {
+    if (tab.dataset.account === account) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
+  });
+}
+
+/* Chart.js binds an instance to the canvas element itself, so constructing a second one
+   over a live instance throws "Canvas is already in use" and leaves the old tooltip and
+   hover handlers attached -- which is what ghosts one model's series into the other's. */
+function teardownCharts() {
+  if (equityChart) { equityChart.destroy(); equityChart = null; }
+  if (sectorChart) { sectorChart.destroy(); sectorChart = null; }
+}
+
+/* Notes that a renderer only *replaces* under some condition. hold-disclaimer ships real
+   copy in the markup, so these reset to what the HTML said rather than to empty -- the
+   markup stays the single source of truth for the default wording. */
+const RESETTABLE_NOTES = ['rebase-note', 'sector-note', 'hold-disclaimer', 'crash-note'];
+const NOTE_DEFAULTS = new Map();
+
+function captureNoteDefaults() {
+  RESETTABLE_NOTES.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) NOTE_DEFAULTS.set(id, el.textContent);
+  });
+}
+
+/* Everything the renderers write conditionally, reset to its pre-render state.
+   Each of these is a one-way write -- it sets a value when its condition holds and does
+   nothing when it does not -- which is invisible on a page that only ever renders once
+   and becomes a stale artifact of the previous model the moment we re-render in place. */
+function resetTransientChrome(account) {
+  const dot = document.getElementById('dot');
+  dot.classList.remove('fresh', 'warn', 'stale', 'marked');
+  dot.title = '';
+
+  const badge = document.getElementById('scale-badge');
+  badge.hidden = true;
+  badge.textContent = '';
+
+  NOTE_DEFAULTS.forEach((text, id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  });
+
+  const shell = document.getElementById('sector-shell');
+  if (shell) shell.style.width = '';
+
+  // Assigned, never appended: the marked-book warning below is re-added per render.
+  document.getElementById('model-description').textContent = '';
+}
+
+/* ---------- transparency ----------
+   Results-only position history: entries, exits, prices and realised returns. The two
+   payloads are generated by scripts/build_holdings_history.py in the research repo,
+   which enforces a key allowlist and a privacy firewall on the way out -- so a column
+   added upstream cannot leak a score onto this page by accident.
+
+   Cached per account because the institutional payload is ~100KB and toggling models
+   back and forth must not refetch it. */
+const HISTORY_FILES = {
+  '': 'retail_holdings_history.json',
+  institutional: 'institutional_holdings_history.json'
+};
+const HISTORY_CACHE = {};
+const HISTORY_PAGE = 250;
+
+let historyRows = [];
+let historyShowAll = false;
+
+const EMPTY_NO_DATA =
+  '<strong>No history available yet.</strong>'
+  + ' Published position records will appear here when available.';
+/* The shadow book is weight-only research output; run_production.py never writes it to
+   the ledger, so there is genuinely nothing to show rather than a load failure. */
+const EMPTY_SHADOW =
+  '<strong>No history for the shadow book.</strong>'
+  + ' No position-level journal is published for this simulated book. Choose another book to view its available records.';
+const EMPTY_FILTER =
+  '<strong>No rows match these filters.</strong>'
+  + ' Try clearing the ticker search or choosing a different month.';
+const EMPTY_ERROR =
+  '<strong>History unavailable.</strong>'
+  + ' The holdings history file could not be loaded. Please check back shortly.';
+
+/* daily_return_pct arrives already in percent, unlike the fraction-valued series the
+   rest of this page carries -- so these do not go through pct()/signedPct(). */
+const histPct = v =>
+  v == null ? '—' : (v > 0 ? '+' : v < 0 ? '' : '') + v.toFixed(2) + '%';
+const histSigned = (v, unit) =>
+  v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + unit(Math.abs(v));
+/* An unchanged mark is neither a gain nor a loss. Colouring zero green reads as a win
+   on days the ledger simply carried yesterday's price forward. */
+const histTone = v => v == null || v === 0 ? '' : v > 0 ? 'edge-pos' : 'edge-neg';
+const histSize = (v, isWeight) =>
+  v == null ? '—' : isWeight ? (v * 100).toFixed(3) + '%' : String(v);
+
+/* Columnar on the wire for size; the table wants rows. Decoded once per fetch. */
+function decodeHistory(payload) {
+  const d = payload.live_daily || {};
+  const isWeight = !('shares' in d);
+  const sizes = isWeight ? d.target_weight : d.shares;
+  const pnls = isWeight ? d.contribution_pp : d.daily_pnl;
+
+  const rows = (d.dates || []).map((date, i) => ({
+    date, ticker: d.tickers[i], status: d.status[i],
+    size: sizes[i], price: d.prices[i],
+    ret: d.daily_return_pct[i], pnl: pnls[i],
+    snapshot: false
+  }));
+
+  /* Month-end backtest NAV snapshots are omitted from the Trade Journal.
+     The full 20-year NAV history is already shown on the Overview tab's
+     equity curve. This tab only surfaces months where real position-level
+     data (entry/exit/hold) is available from the live ledger. */
+
+  /* Compute hold days (calendar days since entry) and cumulative P&L per ticker.
+     Both are derived purely from the rows already decoded — no extra fetch needed. */
+  const entryDate = {};
+  const cumPnlMap = {};
+  // Sort ascending to compute running totals forward in time
+  rows.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  rows.forEach(r => {
+    const key = r.ticker;
+    if (r.status === 'IN') {
+      entryDate[key] = r.date;
+      cumPnlMap[key] = null;
+    }
+    if (entryDate[key]) {
+      const msPerDay = 86400000;
+      r.holdDays = Math.round((new Date(r.date) - new Date(entryDate[key])) / msPerDay);
+      // Accumulate observed contributions only. A book that publishes no P&L
+      // (null throughout) must render "—", not a fabricated 0.00.
+      if (typeof r.pnl === 'number' && Number.isFinite(r.pnl)) {
+        cumPnlMap[key] = (cumPnlMap[key] ?? 0) + r.pnl;
+      }
+      r.cumPnl = cumPnlMap[key] ?? null;
+    } else {
+      r.holdDays = null;
+      r.cumPnl = null;
+    }
+    if (r.status === 'OUT') {
+      delete entryDate[key];
+      delete cumPnlMap[key];
+    }
+  });
+
+  /* HOLD rows are needed above to calculate running P&L and holding periods, but the
+     Trade Journal is an execution log. Publish entries and exits only. */
+  const tradeRows = rows.filter(r => r.status === 'IN' || r.status === 'OUT');
+  tradeRows.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  return {rows: tradeRows, isWeight, book: payload.book || '', notes: payload.notes || ''};
+}
+
+const historyAction = (status, isWeight = false) => status === 'IN' ? (isWeight ? 'ADDED' : 'BUY') : status === 'OUT' ? (isWeight ? 'REMOVED' : 'SELL') : status;
+
+function historyFiltered() {
+  const month = document.getElementById('history-month').value;
+  const query = document.getElementById('history-ticker').value.trim().toUpperCase();
+  return historyRows.filter(r =>
+    (!month || r.date.slice(0, 7) === month)
+    && (!query || r.ticker.toUpperCase().includes(query))
+  );
+}
+
+function showHistoryEmpty(html) {
+  const empty = document.getElementById('history-empty');
+  empty.innerHTML = html;
+  empty.hidden = false;
+  document.getElementById('history-table-wrap').hidden = true;
+  document.getElementById('history-more').hidden = true;
+}
+
+function renderHistory() {
+  const rows = historyFiltered();
+  const count = document.getElementById('history-count');
+
+  if (!rows.length) {
+    count.textContent = '';
+    showHistoryEmpty(historyRows.length ? EMPTY_FILTER : EMPTY_NO_DATA);
+    return;
+  }
+
+  document.getElementById('history-empty').hidden = true;
+  document.getElementById('history-table-wrap').hidden = false;
+
+  const shown = historyShowAll ? rows : rows.slice(0, HISTORY_PAGE);
+  const isWeight = historyRows.isWeight;
+  const fragment = document.createDocumentFragment();
+
+  shown.forEach(r => {
+    const tr = document.createElement('tr');
+    if (r.snapshot) tr.className = 'snapshot-row';
+    const retClass = histTone(r.ret);
+    const cumClass = histTone(r.cumPnl);
+    tr.innerHTML =
+      `<td>${esc(r.date)}</td>`
+      + `<td class="ticker-cell">${esc(r.ticker)}</td>`
+      + `<td><span class="status-badge status-${esc(r.status.toLowerCase())}">`
+      + `${esc(historyAction(r.status, isWeight))}</span></td>`
+      + `<td class="num">${esc(histSize(r.size, isWeight))}</td>`
+      + `<td class="num">${r.price == null ? '—' : esc(money2(r.price))}</td>`
+      + `<td class="num ${retClass}">${esc(histPct(r.ret))}</td>`
+      + `<td class="num">${r.holdDays == null ? '—' : r.holdDays + ' days'}</td>`
+      + `<td class="num ${cumClass}">${r.cumPnl == null ? '—'
+          : isWeight ? histPct(r.cumPnl).replace('%', ' pp') : histSigned(r.cumPnl, money2)}</td>`;
+    fragment.appendChild(tr);
+  });
+
+  const body = document.getElementById('history-body');
+  body.innerHTML = '';
+  body.appendChild(fragment);
+
+  count.textContent = `${shown.length.toLocaleString('en-US')} of `
+    + `${rows.length.toLocaleString('en-US')} rows`;
+
+  const more = document.getElementById('history-more');
+  more.hidden = rows.length <= HISTORY_PAGE;
+  more.textContent = historyShowAll
+    ? 'Show fewer'
+    : `Show all ${rows.length.toLocaleString('en-US')} rows`;
+}
+
+function populateHistoryMonths() {
+  const select = document.getElementById('history-month');
+  const months = [...new Set(historyRows.map(r => r.date.slice(0, 7)))]
+    .sort().reverse();
+  select.innerHTML = '<option value="">All months</option>'
+    + months.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+}
+
+/* Exports raw values rather than the formatted cells: a spreadsheet wants -2.02, not
+   "−2.02%". Only the rows currently passing the filters are written. */
+function exportHistoryCsv() {
+  const rows = historyFiltered();
+  if (!rows.length) return;
+  const isWeight = historyRows.isWeight;
+  const header = ['Date', 'Ticker', 'Status', isWeight ? 'TargetWeight' : 'Shares',
+                  'Price', 'DayReturnPct', 'HoldDays',
+                  isWeight ? 'CumContributionPP' : 'CumPnL'];
+  const quote = value => {
+    const text = value == null ? '' : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [header.join(',')];
+  rows.forEach(r => lines.push(
+    [r.date, r.ticker, r.status, r.size, r.price, r.ret, r.holdDays, r.cumPnl].map(quote).join(',')
+  ));
+
+  const blob = new Blob([lines.join('\r\n')], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `holdings_history_${resolveAccount() || 'retail'}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function resolveAssetUrl(file) {
+  let path = window.location.pathname || '/';
+  if (/\.[a-zA-Z0-9]+$/.test(path)) {
+    path = path.replace(/\/[^\/]+$/, '/');
+  } else if (!path.endsWith('/')) {
+    path = path + '/';
+  }
+  return path + file;
+}
+
+async function loadHistory(account) {
+  const skeleton = document.getElementById('history-skeleton');
+  const book = document.getElementById('history-book');
+  const file = HISTORY_FILES[account];
+
+  document.getElementById('history-ticker').value = '';
+  document.getElementById('history-month').innerHTML =
+    '<option value="">All months</option>';
+  historyShowAll = false;
+
+  if (!file) {
+    historyRows = [];
+    skeleton.hidden = true;
+    book.hidden = true;
+    document.getElementById('history-count').textContent = '';
+    document.getElementById('history-note').textContent = '';
+    showHistoryEmpty(EMPTY_SHADOW);
+    return;
+  }
+
+  let payload = HISTORY_CACHE[account];
+  if (!payload) {
+    skeleton.hidden = false;
+    document.getElementById('history-table-wrap').hidden = true;
+    document.getElementById('history-empty').hidden = true;
+    document.getElementById('history-more').hidden = true;
+    try {
+      const res = await fetch(resolveAssetUrl(file) + '?v=' + Date.now(), {cache: 'no-store'});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      payload = await res.json();
+      HISTORY_CACHE[account] = payload;
+    } catch (err) {
+      console.error('[dashboard] history fetch failed', file, err);
+      historyRows = [];
+      skeleton.hidden = true;
+      book.hidden = true;
+      showHistoryEmpty(EMPTY_ERROR);
+      return;
+    }
+  }
+  skeleton.hidden = true;
+
+  const decoded = decodeHistory(payload);
+  historyRows = decoded.rows;
+  historyRows.isWeight = decoded.isWeight;
+
+  document.getElementById('history-size-head').textContent =
+    decoded.isWeight ? 'Target Weight' : 'Shares';
+  document.getElementById('history-pnl-head').textContent =
+    decoded.isWeight ? 'Cumulative Contribution (pp)' : 'Cumulative P&L';
+  book.hidden = false;
+  book.textContent = `${CFG.label} · ${decoded.isWeight ? 'Model target history' : 'Paper ledger'}`;
+  document.getElementById('history-note').textContent = decoded.isWeight
+    ? 'Model-target history may extend before live start. Holding periods use calendar days. Cumulative contributions sum available daily observations; missing observations are treated as zero by the journal.'
+    : 'Paper-account journal. Holding periods use calendar days. Cumulative P&L sums the published daily P&L observations from entry through exit.';
+
+  populateHistoryMonths();
+  renderHistory();
+}
+
+function resolveView() {
+  const v = new URLSearchParams(window.location.search).get('view');
+  return (v === 'journal' || v === 'transparency') ? 'journal' : 'overview';
+}
+
+/* Both selections live in the query string, so a link carries the model *and* the pane.
+   Written in one place because loadModelData and setView each change only one of them
+   and the naive rebuild drops the other. */
+function writeUrl(account, view) {
+  const params = new URLSearchParams();
+  if (account) params.set('account', account);
+  if (view && view !== 'overview') params.set('view', view);
+  const query = params.toString();
+  history.replaceState({account, view}, '', query ? `?${query}` : window.location.pathname);
+}
+
+function setView(view) {
+  document.querySelectorAll('#view-tabs .tab').forEach(tab => {
+    if (tab.dataset.view === view) tab.setAttribute('aria-current', 'page');
+    else tab.removeAttribute('aria-current');
+  });
+  document.getElementById('view-overview').hidden = view !== 'overview';
+  document.getElementById('view-journal').hidden = view !== 'journal';
+  writeUrl(resolveAccount(), view);
+  if (view === 'journal') loadHistory(resolveAccount());
+}
+
+/* Bound once at boot, never from a renderer -- registering these inside renderHistory
+   would stack a fresh handler on every filter keystroke. */
+function initViewTabs() {
+  document.getElementById('view-tabs').addEventListener('click', event => {
+    const tab = event.target.closest('.tab');
+    if (!tab || tab.dataset.view === resolveView()) return;
+    setView(tab.dataset.view);
+  });
+
+  const rerender = () => { historyShowAll = false; renderHistory(); };
+  document.getElementById('history-month').addEventListener('change', rerender);
+  document.getElementById('history-ticker').addEventListener('input', rerender);
+  document.getElementById('history-export').addEventListener('click', exportHistoryCsv);
+  document.getElementById('history-more').addEventListener('click', () => {
+    historyShowAll = !historyShowAll;
+    renderHistory();
+  });
+}
+
+/* The single entry point for putting a model on screen. Used for the first paint and
+   every subsequent toggle, so there is one ordering to reason about rather than two. */
+async function loadModelData(account, {initial = false} = {}) {
+  const tabs = document.getElementById('account-tabs');
+  const previous = CFG;
+  tabs.setAttribute('aria-busy', 'true');
+
+  let snap;
+  try {
+    const res = await fetch(resolveAssetUrl(ACCOUNTS[account].file) + '?v=' + Date.now(), {cache: 'no-store'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    snap = await res.json();
+  } catch (err) {
+    console.error('[dashboard] snapshot fetch failed', ACCOUNTS[account].file, err);
+    tabs.removeAttribute('aria-busy');
+    if (initial) {
+      fail(`${ACCOUNTS[account].label} data could not be loaded. Please try again later.`);
+    } else {
+      /* A failed swap leaves the previous model rendered and correct. Roll the
+         selection back to match what is actually on screen rather than stranding the
+         pill on a model the page is not showing. */
+      CFG = previous;
+      renderAccountTabs(resolveAccount());
+    }
+    return false;
+  }
+
+  try {
+    CFG = ACCOUNTS[account];
+    teardownCharts();
+    resetTransientChrome(account);
+    renderAccountTabs(account);
+
+
+    SNAP = snap;
+    renderHeadline(snap);
+    renderPill(snap);
+    renderRegimeBanner(snap);
+    renderEquity(snap);
+    renderCrash(snap);
+    renderSectors(snap);
+    renderHeatmap(snap);
+    renderHoldings(snap);
+    renderSectorConviction(snap);
+  } catch (err) {
+    console.error('[dashboard] render failed', err);
+    fail('Dashboard could not be rendered. Please try again later.');
+    return false;
+  } finally {
+    tabs.removeAttribute('aria-busy');
+  }
+
+  // Keeps the active model linkable and survivable across a refresh, without the full
+  // navigation the old anchor-based tabs cost. The pane selection rides along, so a
+  // model swap does not silently bounce the visitor back to Overview.
+  const view = resolveView();
+  writeUrl(account, view);
+
+  // The history pane is per-book, so a swap while it is open has to refetch and
+  // re-render it; the payloads are cached, so returning to a book is instant. On the
+  // first paint boot() calls setView instead, which covers this.
+  if (view === 'journal' && !initial) loadHistory(account);
+  return true;
+}
+
+function initAccountTabs() {
+  document.getElementById('account-tabs').addEventListener('click', event => {
+    const tab = event.target.closest('.tab');
+    if (!tab) return;
+    const account = tab.dataset.account;
+    if (account === resolveAccount()) return;  // Already showing; nothing to swap.
+    loadModelData(account);
+  });
+}
+
+async function boot() {
+  // Before the fetch, so both controls work even on the failure screen.
+  initTheme();
+  initAccountTabs();
+  initViewTabs();
+  initEquityControls();
+  initHeroSelector();
+  captureNoteDefaults();
+  applyDefaults();
+
+  if (!await loadModelData(resolveAccount(), {initial: true})) return;
+
+  // After the model is on screen, so the pane it reveals is already populated.
+  setView(resolveView());
+
+  document.getElementById('state').hidden = true;
+  document.getElementById('hdr').hidden = false;
+  document.getElementById('main').hidden = false;
+  document.getElementById('ftr').hidden = false;
+}
+
+boot();
+</script>
+</body>
+</html>
