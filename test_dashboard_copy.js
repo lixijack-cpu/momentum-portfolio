@@ -141,6 +141,11 @@ async function verify(h,account,s) {
   const missing=chart.options.plugins.tooltip.callbacks.afterBody([{dataset:{label:type},parsed:{x:0,y:1}}]);
   assert.equal(missing,'S&P 500 comparison unavailable for this date');
   await h.run(`loadHistory(${JSON.stringify(account)})`);
+  if(locked.length > 0) {
+    includes(h.text('hold-embargo-explainer'),'Form 13F disclosure lags','embargo explainer');
+    includes(h.text('hold-embargo-explainer'),'immediately upon exit in the Trade Journal','embargo unmasking');
+    includes(h.text('history-note'),'Completed exits and holdings past the 30-day embargo window are fully unmasked','journal unmasking');
+  }
   if(sim) {
     for(const id of ['model-description','view-overview','view-journal','pill-sub']) assert.doesNotMatch(h.text(id),/\bretail\b|10-Stock|\bfunded\b/i,id);
     assert.doesNotMatch(h.text('history-body'),/\bBUY\b|\bSELL\b/);

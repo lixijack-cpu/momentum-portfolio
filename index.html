@@ -840,6 +840,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <div class="livestat"><div class="k" id="l-ret-k">Return Since Live Start</div><div class="v num" id="l-ret">—</div></div>
       <div class="livestat"><div class="k" id="l-days-k">Trading Sessions</div><div class="v num" id="l-days">—</div></div>
     </div>
+    <p class="caption" id="hold-embargo-explainer" hidden></p>
     <div id="holdings"></div>
     <p class="disclaimer" id="hold-disclaimer"></p>
   </section>
@@ -862,6 +863,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
         <p id="about-metrics"></p>
         <p>Historical results use point-in-time inputs and modeled transaction costs. A backtest is not an execution record, and simulated returns do not establish achievable trading capacity.</p>
         <p>Research signals and dashboard updates are automated. The dates shown identify the latest published marks; source data and publication can lag.</p>
+        <p>Portfolio-level marks (NAV, equity curves, drawdowns, monthly returns, and sector weights) publish live at T+0 after each market close. Individual positions entered within the last 30 calendar days are masked as LOCKED-#n—displaying live sector, portfolio weight, and dollar value while withholding ticker, share count, and price—to prevent signal scraping and protect live execution, consistent with institutional 30-day and Form 13F disclosure lags. Positions unmask automatically once held for 30 days or immediately upon exit in the Trade Journal.</p>
         <p id="about-method"></p>
       </div>
     </details>
@@ -1944,8 +1946,14 @@ function renderHoldings(s) {
       + 'Position values are target weight times NAV, not executed lots or the fixed holdings underlying the buy-and-hold live track. '
       + 'Scaling does not model additional market impact or establish trading capacity.';
   const embargoed = positions.filter(p => /^LOCKED-#\d+$/.test(p.ticker)).length;
+  const explainer = document.getElementById('hold-embargo-explainer');
   if (embargoed > 0) {
     disclaimer.textContent += ` ${EMBARGO_NOTE} ${embargoed} of ${positions.length} positions are shown by sector, weight and value only.`;
+    explainer.hidden = false;
+    explainer.textContent = `30-Day Disclosure Embargo (${embargoed} of ${positions.length} active positions masked): Portfolio NAV, daily returns, drawdowns, and sector exposures update live at market close (T+0). Positions entered within the last 30 calendar days are shown as LOCKED-#n with live sector, weight, and dollar value while withholding ticker, share count, and price to prevent signal scraping and protect live execution, consistent with institutional 30-day and Form 13F disclosure lags. Positions unmask automatically once held for 30 days or immediately upon exit in the Trade Journal.`;
+  } else {
+    explainer.hidden = true;
+    explainer.textContent = '';
   }
 }
 
@@ -2472,9 +2480,10 @@ async function loadHistory(account) {
     decoded.isWeight ? 'Cumulative Contribution (pp)' : 'Cumulative P&L';
   book.hidden = false;
   book.textContent = `${CFG.label} · ${decoded.isWeight ? 'Model target history' : 'Paper ledger'}`;
-  document.getElementById('history-note').textContent = decoded.isWeight
+  document.getElementById('history-note').textContent = (decoded.isWeight
     ? 'Model-target history may extend before live start. Holding periods use calendar days. Cumulative contributions sum available daily observations; missing observations are treated as zero by the journal.'
-    : 'Paper-account journal. Holding periods use calendar days. Cumulative P&L sums the published daily P&L observations from entry through exit.';
+    : 'Paper-account journal. Holding periods use calendar days. Cumulative P&L sums the published daily P&L observations from entry through exit.')
+    + ' Completed exits and holdings past the 30-day embargo window are fully unmasked; active entries still within their 30-day embargo window appear as LOCKED-#n until 30 days from entry or upon exit.';
 
   populateHistoryMonths();
   renderHistory();
