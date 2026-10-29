@@ -848,7 +848,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   <section class="card" id="sector-conviction-section" hidden>
     <div class="section-head">
       <h2>Quantitative Sector Conviction</h2>
-      <p>Leading disclosed names within each sector from the latest monthly ranking. Names still under the 30-day embargo are withheld.</p>
+      <p>Leading disclosed names within each sector from the latest monthly ranking. Names still under the 7-day embargo are withheld.</p>
     </div>
     <p class="disclaimer sector-conviction-disclaimer"><em>Names from the published factor-ranking watchlist. These are not active holdings.</em></p>
     <div class="sector-conviction-grid" id="sector-conviction"></div>
@@ -863,7 +863,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
         <p id="about-metrics"></p>
         <p>Historical results use point-in-time inputs and modeled transaction costs. A backtest is not an execution record, and simulated returns do not establish achievable trading capacity.</p>
         <p>Research signals and dashboard updates are automated. The dates shown identify the latest published marks; source data and publication can lag.</p>
-        <p>Portfolio-level marks (NAV, equity curves, drawdowns, monthly returns, and sector weights) publish live at T+0 after each market close. Individual positions entered within the last 30 calendar days are masked as LOCKED-#n—displaying live sector, portfolio weight, and dollar value while withholding ticker, share count, and price—to prevent signal scraping and protect live execution, consistent with institutional 30-day and Form 13F disclosure lags. Positions unmask automatically once held for 30 days or immediately upon exit in the Trade Journal.</p>
+        <p>Track-record verification &amp; 7-day execution embargo: Portfolio-level marks (NAV, equity curves, drawdowns, monthly returns, and sector weights) publish live at T+0 after each market close via automated, timestamped Git commits, and published trade prices use recorded market-close prices. Individual positions entered within the last 7 calendar days are masked as LOCKED-#n—displaying live sector, portfolio weight, and dollar value while withholding ticker, share count, and price—to protect initial execution. Positions unmask automatically once held for 7 days or immediately upon exit in the Trade Journal.</p>
         <p id="about-method"></p>
       </div>
     </details>
@@ -1799,9 +1799,9 @@ function renderHeatmap(s) {
   wrap.innerHTML = html;
 }
 
-/* Positions entered within the last 30 days are published as LOCKED-#n with
+/* Positions entered within the last 7 days are published as LOCKED-#n with
    sector, weight and value only; price and share count are withheld. */
-const EMBARGO_NOTE = 'Active positions are embargoed for 30 days to protect live execution.';
+const EMBARGO_NOTE = 'Active positions are embargoed for 7 days to protect live execution.';
 
 function renderHoldings(s) {
   const h = s?.holdings;
@@ -1950,7 +1950,7 @@ function renderHoldings(s) {
   if (embargoed > 0) {
     disclaimer.textContent += ` ${EMBARGO_NOTE} ${embargoed} of ${positions.length} positions are shown by sector, weight and value only.`;
     explainer.hidden = false;
-    explainer.textContent = `30-Day Disclosure Embargo (${embargoed} of ${positions.length} active positions masked): Portfolio NAV, daily returns, drawdowns, and sector exposures update live at market close (T+0). Positions entered within the last 30 calendar days are shown as LOCKED-#n with live sector, weight, and dollar value while withholding ticker, share count, and price to prevent signal scraping and protect live execution, consistent with institutional 30-day and Form 13F disclosure lags. Positions unmask automatically once held for 30 days or immediately upon exit in the Trade Journal.`;
+    explainer.textContent = `7-Day Execution Embargo (${embargoed} of ${positions.length} active positions masked): Portfolio NAV, daily returns, drawdowns, and sector exposures update live at market close (T+0) via automated Git commits. Positions entered within the last 7 calendar days are shown as LOCKED-#n with live sector, weight, and dollar value while withholding ticker, share count, and price to protect initial rebalance execution. Positions unmask automatically once held for 7 days or immediately upon exit in the Trade Journal.`;
   } else {
     explainer.hidden = true;
     explainer.textContent = '';
@@ -2483,7 +2483,7 @@ async function loadHistory(account) {
   document.getElementById('history-note').textContent = (decoded.isWeight
     ? 'Model-target history may extend before live start. Holding periods use calendar days. Cumulative contributions sum available daily observations; missing observations are treated as zero by the journal.'
     : 'Paper-account journal. Holding periods use calendar days. Cumulative P&L sums the published daily P&L observations from entry through exit.')
-    + ' Completed exits and holdings past the 30-day embargo window are fully unmasked; active entries still within their 30-day embargo window appear as LOCKED-#n until 30 days from entry or upon exit.';
+    + ' Published trade prices use recorded market-close prices. Completed exits and holdings past the 7-day embargo window are fully unmasked; active entries still within their 7-day embargo window appear as LOCKED-#n until 7 days from entry or upon exit.';
 
   populateHistoryMonths();
   renderHistory();

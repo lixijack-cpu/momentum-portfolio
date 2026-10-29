@@ -115,7 +115,7 @@ async function verify(h,account,s) {
   for(const r of s.crash_table) for(const k of ['strategy_max_drawdown_monthly','spy_max_drawdown_monthly']) if(r[k]!=null) includes(h.text('crash-body'),pct(r[k],1),'month-end stress-window value');
   const locked=s.holdings.positions.filter(p=>/^LOCKED-#\d+$/.test(p.ticker));
   for(const p of locked) { assert.equal(p.price,null,p.ticker+' price'); assert.equal(p.shares,null,p.ticker+' shares'); }
-  if(locked.length) includes(h.text('hold-disclaimer'),'Active positions are embargoed for 30 days to protect live execution','embargo note');
+  if(locked.length) includes(h.text('hold-disclaimer'),'Active positions are embargoed for 7 days to protect live execution','embargo note');
 
   // All position rows, including collapsed ones, must retain prices/nulls and values.
   h.document.getElementById('holdings').querySelector('.show-all')?.click();
@@ -142,9 +142,9 @@ async function verify(h,account,s) {
   assert.equal(missing,'S&P 500 comparison unavailable for this date');
   await h.run(`loadHistory(${JSON.stringify(account)})`);
   if(locked.length > 0) {
-    includes(h.text('hold-embargo-explainer'),'Form 13F disclosure lags','embargo explainer');
+    includes(h.text('hold-embargo-explainer'),'7-Day Execution Embargo','embargo explainer');
     includes(h.text('hold-embargo-explainer'),'immediately upon exit in the Trade Journal','embargo unmasking');
-    includes(h.text('history-note'),'Completed exits and holdings past the 30-day embargo window are fully unmasked','journal unmasking');
+    includes(h.text('history-note'),'Completed exits and holdings past the 7-day embargo window are fully unmasked','journal unmasking');
   }
   if(sim) {
     for(const id of ['model-description','view-overview','view-journal','pill-sub']) assert.doesNotMatch(h.text(id),/\bretail\b|10-Stock|\bfunded\b/i,id);

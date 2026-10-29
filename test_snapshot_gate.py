@@ -528,7 +528,7 @@ def masked_fixture() -> dict:
     base["live"].update(nav=10711.61 + 500.0)
     base["equity_curve"]["live"][-1]["v"] = round((10711.61 + 500.0) * 2, 2)
     base["holdings"]["positions"].append(dict(
-        ticker="LOCKED-#1", name="Active Position (30-Day Embargo)", sector="Tech",
+        ticker="LOCKED-#1", name="Active Position (7-Day Embargo)", sector="Tech",
         shares=None, price=None, value=500.0, weight=500.0 / 11211.61, rationale=None))
     return base
 

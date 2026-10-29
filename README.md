@@ -29,7 +29,7 @@ The 2011 EU debt crisis is reported even though the strategy underperformed the 
 that window. A stress table in which every row wins is not a stress table.
 
 Portfolio-level figures (NAV, returns, drawdowns, sector weights) are published after each
-close. Individual positions entered within the last 30 days are embargoed to protect live
+close. Individual positions entered within the last 7 days are embargoed to protect live
 execution and are revealed once that window passes or the position is closed.
 
 ## Files
