@@ -1233,7 +1233,7 @@ function renderBookCopy(s) {
   document.querySelector('[data-view="journal"]').textContent = sim ? 'Target Journal' : 'Trade Journal';
   document.getElementById('history-sub').textContent = sim
     ? 'Published model-target additions and removals. These records do not establish executed trades or the holdings used by the buy-and-hold live simulation.'
-    : 'Paper-ledger initial entries (BUY) and complete exits (SELL). Position resizing is omitted from this journal.';
+    : 'Paper-ledger initial entries (BUY), partial additions (BUY), partial trims (SELL), and complete exits (SELL), alongside active holdings (HOLD).';
   document.getElementById('history-execution-note').textContent = sim
     ? 'Target changes are labeled ADDED and REMOVED. Missing prices or contributions are unavailable, not evidence of execution.'
     : 'BUY and SELL describe paper-account activity only. No real capital is deployed.';
@@ -1410,8 +1410,8 @@ function renderRegimeBanner(snap) {
   if (!r) { banner.hidden = true; return; }
   banner.dataset.state = r.state || 'risk_on';
   banner.hidden = false;
-  document.getElementById('rb-state').textContent =
-    (r.state || 'unavailable').replace(/_/g, ' ').toUpperCase();
+  const stateLabel = (r.state || 'unavailable').replace(/_/g, ' ').toUpperCase();
+  document.getElementById('rb-state').textContent = stateLabel;
   document.getElementById('rb-exposure').textContent =
     r.gross_exposure != null ? (+((r.gross_exposure)*100).toFixed(1)) + '% target exposure' : 'Exposure unavailable';
   document.getElementById('rb-eq-wt').textContent =
@@ -1424,6 +1424,7 @@ function renderRegimeBanner(snap) {
     r.macro_cash && r.macro_cash.length ? r.macro_cash.join(' · ') : '—';
   document.getElementById('rb-asof').textContent =
     r.as_of ? 'as of ' + r.as_of : '';
+  banner.title = `Regime state ${stateLabel}: standalone equity target exposure is ${r.gross_exposure != null ? (+(r.gross_exposure*100).toFixed(2)) + '%' : '—'} (${r.equity_weight != null ? (+(r.equity_weight*100).toFixed(2)) + '%' : '—'} deployed in the 75/25 multi-asset blend alongside ${r.macro_etf_weight != null ? Math.round(r.macro_etf_weight*100) + '%' : '—'} Macro ETFs, with the balance in cash).`;
 }
 
 function renderEquity(s) {
@@ -1622,7 +1623,7 @@ function renderCrash(s) {
 
 function renderSectors(s) {
   const sh = s.sector_history;
-  document.getElementById('sector-sub').textContent = `${rangeOf(sh.months.map(month => ({month})), 'month')}. Sector weights come from a reference configuration through mid-2026 and from the model’s recorded rebalances after that, not the selected book’s historical holdings. Bar height is total equity exposure.`;
+  document.getElementById('sector-sub').textContent = `${rangeOf(sh.months.map(month => ({month})), 'month')}. Sector weights come from a reference configuration through mid-2026 and from the model’s recorded rebalances after that, not the selected book’s historical holdings. Bar height is standalone equity exposure (98.5% in RISK ON; scaled to 49.25% in TREND OFF / NEUTRAL and 25.0% in VOL SPIKE, with the remainder in cash).`;
   const C = themeColors();
   const palette = sectorColors();
   const shell = document.getElementById('sector-shell');
@@ -2487,7 +2488,7 @@ async function loadHistory(account) {
   book.textContent = `${CFG.label} · ${decoded.isWeight ? 'Model target history' : 'Paper ledger'}`;
   document.getElementById('history-note').textContent = (decoded.isWeight
     ? 'Model-target history may extend before live start. Holding periods use calendar days. Cumulative contributions sum available daily observations; missing observations are treated as zero by the journal.'
-    : 'Paper-account journal. Holding periods use calendar days. Cumulative P&L sums the published daily P&L observations from entry through exit.')
+    : 'Paper-account journal. Initial entries, partial additions (BUY), partial trims (SELL), and final exits are logged individually by trade date; holding periods (calendar days) and cumulative P&L accrue continuously across the unbroken holding spell from initial entry through complete exit.')
     + ' Published trade prices use recorded market-close prices. Completed exits and holdings past the 7-day embargo window are fully unmasked; active entries still within their 7-day embargo window appear as LOCKED-#n until 7 days from entry or upon exit.';
 
   populateHistoryMonths();
