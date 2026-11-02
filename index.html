@@ -581,13 +581,16 @@ select.field{cursor:pointer;padding-right:10px}
   white-space: normal;
 }
 #regime-banner[data-state="risk_on"] { background: linear-gradient(90deg, rgba(16,185,129,0.10) 0%, transparent 50%); }
-#regime-banner[data-state="risk_off"] { background: linear-gradient(90deg, rgba(239,68,68,0.10) 0%, transparent 50%); }
+#regime-banner[data-state="trend_off"], #regime-banner[data-state="neutral"] { background: linear-gradient(90deg, rgba(245,158,11,0.10) 0%, transparent 50%); }
+#regime-banner[data-state="risk_off"], #regime-banner[data-state="vol_spike"] { background: linear-gradient(90deg, rgba(239,68,68,0.10) 0%, transparent 50%); }
 .rb-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 [data-state="risk_on"] .rb-dot { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.6); }
-[data-state="risk_off"] .rb-dot { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.6); }
+[data-state="trend_off"] .rb-dot, [data-state="neutral"] .rb-dot { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,0.6); }
+[data-state="risk_off"] .rb-dot, [data-state="vol_spike"] .rb-dot { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.6); }
 .rb-label { font-weight:700; text-transform:uppercase; font-size:11px; }
 [data-state="risk_on"] .rb-label { color:#10b981; }
-[data-state="risk_off"] .rb-label { color:#ef4444; }
+[data-state="trend_off"] .rb-label, [data-state="neutral"] .rb-label { color:#f59e0b; }
+[data-state="risk_off"] .rb-label, [data-state="vol_spike"] .rb-label { color:#ef4444; }
 .rb-sep { opacity:0.3; margin:0 4px; }
 .rb-tag { background:rgba(128,128,128,0.12); border-radius:4px; padding:2px 7px; font-size:11px; }
 
@@ -2278,11 +2281,13 @@ function decodeHistory(payload) {
      Both are derived purely from the rows already decoded — no extra fetch needed. */
   const entryDate = {};
   const cumPnlMap = {};
+  const heldOnDate = new Set(rows.filter(r => r.status === 'HOLD').map(r => `${r.date}|${r.ticker}`));
+  const statusOrder = {HOLD: 0, IN: 1, OUT: 2};
   // Sort ascending to compute running totals forward in time
-  rows.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  rows.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1));
   rows.forEach(r => {
     const key = r.ticker;
-    if (r.status === 'IN') {
+    if (r.status === 'IN' && !entryDate[key]) {
       entryDate[key] = r.date;
       cumPnlMap[key] = null;
     }
@@ -2299,7 +2304,7 @@ function decodeHistory(payload) {
       r.holdDays = null;
       r.cumPnl = null;
     }
-    if (r.status === 'OUT') {
+    if (r.status === 'OUT' && !heldOnDate.has(`${r.date}|${key}`)) {
       delete entryDate[key];
       delete cumPnlMap[key];
     }
