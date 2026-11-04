@@ -38,6 +38,12 @@ jobs:
         run: python test_snapshot_gate.py && node test_holdings_ui.js
       - name: Verify dashboard copy for all books
         run: node test_dashboard_copy.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify rendered DOM for all books
+        run: npm ci --ignore-scripts --no-audit --no-fund && node test_dashboard_jsdom.js
       # Publish only what the page loads. Scripts, tests and docs stay out of
       # the served site.
       - name: Stage site

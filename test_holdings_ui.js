@@ -177,7 +177,7 @@ assert.ok(!shadowRows[0].innerHTML.includes('price'));
 
 shadowFixture.holdings.price_as_of = null;
 context.renderHoldings(shadowFixture);
-assert.match(element('hold-sub').textContent, /Position price date unavailable; prices omitted/);
+assert.doesNotMatch(element('hold-sub').textContent, /Priced as of|unavailable|null|undefined|NaN/);
 instFixture.holdings.price_as_of = '2026-09-14';
 context.renderHoldings(instFixture);
 assert.match(element('hold-sub').textContent, /Priced as of 2026-09-14/);
@@ -296,3 +296,13 @@ assert.doesNotMatch(weightHtml, /0\.00 pp/, 'null contributions must not render 
 assert.ok(vm.runInContext('decodedW.rows.every(r => r.cumPnl === null)', historyContext));
 
 console.log('ok: Trade Journal leaves cumulative contribution blank when none is published');
+
+// Missing, empty and malformed dates hide their labels, including all-empty metadata.
+for (const value of [null, undefined, '', 'null', 'undefined', 'NaN', '2026-99-99']) {
+  const empty = structuredClone(shadowFixture);
+  for (const key of ['price_as_of','last_rebalance','target_as_of','latest_filing_date']) empty.holdings[key] = value;
+  context.renderHoldings(empty);
+  assert.equal(element('hold-sub').textContent, '');
+  assert.equal(element('hold-sub').hidden, true);
+}
+console.log('ok: missing dates hide labels without null, undefined, NaN or empty dates');

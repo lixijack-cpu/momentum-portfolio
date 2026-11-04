@@ -69,7 +69,6 @@ FROZEN_TOP_LEVEL = (
     "sector_history",
     "sector_conviction",
     "notes",
-    "regime",
 )
 FROZEN_CURVES = ("backtest", "simulation", "spy")
 
@@ -642,6 +641,7 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
     live["since_inception_return"] = round(nav / inception_nav - 1.0, 8)
     live["days_live"] = len(curve)
     live["last_updated"] = price_as_of
+    refresh_account_exposure(snapshot)
 
     # Caught here rather than left to main(): the book has already been remarked at
     # this point, and losing a whole day of prices because Yahoo would not serve one
@@ -830,6 +830,50 @@ def _validate_sector_conviction(snapshot: dict) -> None:
             seen_tickers.add(ticker)
 
 
+def validate_account_exposure(snapshot: dict) -> None:
+    """Every track publishes all invested holdings and cash as fractions of NAV."""
+    live, holdings, regime = snapshot['live'], snapshot['holdings'], snapshot['regime']
+    nav = _number(live.get('nav'), 'live.nav')
+    cash = _number(live.get('cash'), 'live.cash')
+    if nav <= 0 or cash < 0:
+        raise SnapshotUpdateError('Invalid exposure NAV/cash')
+    gross = sum(_number(p.get('weight'), 'position.weight') for p in holdings['positions'])
+    if any(p['weight'] < 0 for p in holdings['positions']):
+        raise SnapshotUpdateError('Negative holding weight')
+    if regime.get('weight_basis') != 'fraction_of_nav':
+        raise SnapshotUpdateError('Exposure weight_basis must be fraction_of_nav')
+    checks = [
+        ('holdings + cash = 1', gross + cash / nav, 1.),
+        ('gross_exposure matches holdings', _number(regime.get('gross_exposure'), 'gross_exposure'), gross),
+        ('cash_weight matches cash', _number(regime.get('cash_weight'), 'cash_weight'), cash / nav),
+        ('holdings.cash_weight matches cash', _number(holdings.get('cash_weight'), 'holdings.cash_weight'), cash / nav),
+        ('equity + macro = gross_exposure', _number(regime.get('equity_weight'), 'equity_weight')
+         + _number(regime.get('macro_etf_weight'), 'macro_etf_weight'), gross),
+    ]
+    for label, actual, expected in checks:
+        if abs(actual - expected) > 1e-4:
+            raise SnapshotUpdateError(f'{label}: {actual:.8f} != {expected:.8f}')
+    for position in holdings['positions']:
+        if abs(_number(position.get('value'), 'position.value') / nav - position['weight']) > 1e-5:
+            raise SnapshotUpdateError('Position weight must equal value / NAV')
+    if regime.get('as_of') != snapshot['as_of'] or holdings.get('as_of') != snapshot['as_of']:
+        raise SnapshotUpdateError('Exposure date must match account as_of')
+
+
+def refresh_account_exposure(snapshot: dict) -> None:
+    """A pure price refresh updates NAV fractions without changing membership."""
+    regime = snapshot.get('regime', {})
+    if regime.get('weight_basis') != 'fraction_of_nav':
+        return  # Legacy inputs are migrated by the engine's next full rebuild.
+    holdings, live = snapshot['holdings'], snapshot['live']
+    gross = sum(p['weight'] for p in holdings['positions'])
+    macro = sum(p['weight'] for p in holdings['positions'] if p['ticker'] in regime['macro_longs'])
+    regime.update(gross_exposure=round(gross, 6), equity_weight=round(gross - macro, 6),
+                  macro_etf_weight=round(macro, 6), cash_weight=round(live['cash'] / live['nav'], 6),
+                  state='fully_invested' if gross >= .95 else 'partly_invested', as_of=holdings['as_of'])
+    holdings.update(cash=live['cash'], cash_weight=regime['cash_weight'])
+
+
 def validate(base: dict, updated: dict) -> None:
     """Refuse to publish anything that is not a pure price refresh of ``base``."""
 
@@ -944,6 +988,15 @@ def validate(base: dict, updated: dict) -> None:
                        if not is_masked(old))
     if abs(nav - float(base["live"]["nav"]) - implied_move) > .50:
         raise SnapshotUpdateError("NAV change disagrees with holdings-implied price move")
+    if base.get('regime', {}).get('weight_basis') == 'fraction_of_nav':
+        expected_exposure = copy.deepcopy(updated)
+        expected_exposure['regime'] = copy.deepcopy(base['regime'])
+        refresh_account_exposure(expected_exposure)
+        if expected_exposure['regime'] != updated['regime']:
+            raise SnapshotUpdateError('Exposure must follow observed holdings and cash')
+        validate_account_exposure(updated)
+    elif updated.get('regime') != base.get('regime'):
+        raise SnapshotUpdateError("Certified section 'regime' was modified")
     expected_nav = sum(float(p["value"]) for p in new_positions) + cash
     if abs(nav - expected_nav) > 0.02:
         raise SnapshotUpdateError(

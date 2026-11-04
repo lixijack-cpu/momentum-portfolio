@@ -38,7 +38,7 @@ async function verify(h,account,s) {
   const sim=!!account, scale=sim?500:1, live=s.live, head=s.headline, n=s.holdings.positions.length;
   const type=label(account), name=sim?account[0].toUpperCase()+account.slice(1):'Retail';
   assert.equal(live.days_live,s.equity_curve.live.length,'session count must count published daily marks');
-  if(account==='institutional') assert.equal(new Set(s.holdings.positions.map(p=>p.weight)).size,1,'equal-weighted copy requires equal target weights');
+  if(sim) assert.doesNotMatch(normalize(h.document.body.textContent), /buy-and-hold/i);
   assert.equal(h.run('CFG.label'),name);
   includes(h.text('model-description'),`${n} ${sim?'model target names':'paper-account holdings'}`,'model count');
   includes(h.text('about-book'),`${n} ${sim?'model target names':'paper-account holdings'}`,'about count');
@@ -77,6 +77,7 @@ async function verify(h,account,s) {
     includes(h.text('k-cagr-foot'),`Live start ${live.inception_date}`,'live start');
     includes(h.text('k-sharpe-foot'),`${Math.round(live.excess_return*10000)} bps`,'SPY return difference');
     if(live.excess_return_iwm!=null) includes(h.text('k-dd-foot'),`${Math.round(live.excess_return_iwm*10000)} bps`,'IWM return difference');
+    for (const id of ['k-sharpe-foot', 'k-dd-foot']) includes(h.text(id), `${live.inception_date} to ${live.last_updated}`, 'per-track benchmark window');
     assert.equal(h.text('k-edge'),`${live.days_live} trading sessions`);
     const banner=h.text('live-context-banner');
     for(const v of [name,type,`${n} ${sim?'target names':'holdings'}`,live.inception_date,live.last_updated,head.window_start,head.window_end,`${head.months_oos} out-of-sample months`,pct(head.cagr),head.sharpe.toFixed(3),String(head.excess_vs_spy_bps),pct(head.max_drawdown,1),pct(head.max_drawdown_daily,1)]) includes(banner,v,'live banner');
@@ -107,7 +108,7 @@ async function verify(h,account,s) {
   includes(h.text('sector-sub'),'reference configuration','sector provenance');
   if(s.regime) {
     includes(h.text('rb-asof'),s.regime.as_of,'regime source date');
-    assert.equal(h.text('rb-exposure'),`${+(s.regime.gross_exposure*100).toFixed(1)}% target exposure`);
+    assert.equal(h.text('rb-exposure'),`${+(s.regime.gross_exposure*100).toFixed(1)}% invested`);
     assert.equal(h.text('rb-eq-wt'),Math.round(s.regime.equity_weight*100)+'%');
     assert.equal(h.text('rb-macro-wt'),Math.round(s.regime.macro_etf_weight*100)+'%');
   }
@@ -129,7 +130,7 @@ async function verify(h,account,s) {
     else includes(normalize(row.textContent),dollars(p.price,2)+' price',p.ticker);
   }
   if(s.holdings.price_as_of) includes(h.text('hold-sub'),s.holdings.price_as_of,'price date');
-  else includes(h.text('hold-sub'),'price date unavailable; prices omitted','missing price date');
+  else assert.doesNotMatch(h.text('hold-sub'), /Priced as of/);
 
   // Chart labels, callback output, and empty states are user-visible copy too.
   for(const dataset of chart.data.datasets) {

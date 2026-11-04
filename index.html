@@ -708,7 +708,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 </header>
 
 <div id="regime-banner" data-state="risk_on" hidden>
-  <span class="rb-dot"></span><span title="Shared research signal, not the selected book’s current holdings">Research signal</span>
+  <span class="rb-dot"></span><span title="Selected account holdings and cash as fractions of NAV">Account exposure</span>
   <span class="rb-label" id="rb-state">RISK ON</span>
   <span class="rb-sep">·</span>
   <span id="rb-exposure">—</span>
@@ -717,9 +717,9 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   <span class="rb-sep">·</span>
   <span>Macro ETF <span id="rb-macro-wt" class="rb-tag">—</span></span>
   <span class="rb-sep">|</span>
-  <span>Macro targets: <span id="rb-longs" class="rb-tag">—</span></span>
+  <span>ETF holdings: <span id="rb-longs" class="rb-tag">—</span></span>
   <span class="rb-sep">·</span>
-  <span>Macro sleeves in cash: <span id="rb-cash" class="rb-tag">—</span></span>
+  <span>Cash: <span id="rb-cash" class="rb-tag">—</span></span>
   <span class="rb-sep">|</span>
   <span id="rb-asof" >as of —</span>
 </div>
@@ -853,7 +853,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <h2>Quantitative Sector Conviction</h2>
       <p>Leading disclosed names within each sector from the latest monthly ranking. Names still under the 7-day embargo are withheld.</p>
     </div>
-    <p class="disclaimer sector-conviction-disclaimer"><em>Names from the published factor-ranking watchlist. These are not active holdings.</em></p>
+    <p class="disclaimer sector-conviction-disclaimer"><em>Names from the published research watchlist. These are not active holdings.</em></p>
     <div class="sector-conviction-grid" id="sector-conviction"></div>
   </section>
 
@@ -1222,17 +1222,17 @@ function renderBookCopy(s) {
   const n = positions.length;
   const sim = simulatedBook();
   const accountText = sim
-    ? `${CFG.label}: ${n} model target names. ${CFG.description} The live track is a buy-and-hold simulation using target weights applied at the live-start close; these are not executed lots.`
+    ? `${CFG.label}: ${n} model target names. ${CFG.description} Simulated $10,000 account marked to adjusted closes. Holdings are reset at each model rebalance; history before each rebalance is frozen and never restated.`
     : `${CFG.label}: ${n} paper-account holdings with integer-share sizing. The paper account was funded with ${money(s.live.inception_nav)} at live start ${s.live.inception_date}.`;
   document.getElementById('model-description').textContent = accountText;
   document.getElementById('about-book').textContent = accountText;
   document.getElementById('about-metrics').textContent = `Historical results: ${headlineSummary(s.headline)}.`;
   document.getElementById('sel-live').textContent = liveLabel();
-  document.getElementById('hold-title').textContent = sim ? 'Current Model Target Weights' : 'Current Paper-Account Holdings';
+  document.getElementById('hold-title').textContent = sim ? 'Current Simulated Holdings' : 'Current Paper-Account Holdings';
   document.getElementById('history-title').textContent = sim ? 'Model Target Journal' : 'Paper Trade Journal';
   document.querySelector('[data-view="journal"]').textContent = sim ? 'Target Journal' : 'Trade Journal';
   document.getElementById('history-sub').textContent = sim
-    ? 'Published model-target additions and removals. These records do not establish executed trades or the holdings used by the buy-and-hold live simulation.'
+    ? 'Published model-target additions and removals. Holdings are reset at each model rebalance; these records describe model targets, not executed trades.'
     : 'Paper-ledger initial entries (BUY), partial additions (BUY), partial trims (SELL), and complete exits (SELL), alongside active holdings (HOLD).';
   document.getElementById('history-execution-note').textContent = sim
     ? 'Target changes are labeled ADDED and REMOVED. Missing prices or contributions are unavailable, not evidence of execution.'
@@ -1309,13 +1309,13 @@ function swapHeroCards(view) {
     setCard('k-sharpe', {
       label: 'S&P 500 (SPY)',
       value: signedPct(live.benchmark_return),
-      foot: `Return difference: ${bps >= 0 ? '+' : ''}${esc(bps)} bps · SPY total return`,
+      foot: `Return difference: ${bps >= 0 ? '+' : ''}${esc(bps)} bps · SPY total return · ${live.inception_date} to ${live.last_updated}`,
       hue: 'v-amber'
     });
     setCard('k-dd', {
       label: 'Russell 2000 (IWM)',
       value: live.benchmark_return_iwm != null ? signedPct(live.benchmark_return_iwm) : '—',
-      foot: iwmBps != null ? `Return difference: ${iwmBps >= 0 ? '+' : ''}${esc(iwmBps)} bps · Small-cap benchmark` : 'IWM comparison unavailable',
+      foot: iwmBps != null ? `Return difference: ${iwmBps >= 0 ? '+' : ''}${esc(iwmBps)} bps · ${live.inception_date} to ${live.last_updated}` : `IWM comparison unavailable · ${live.inception_date} to ${live.last_updated}`,
       hue: 'v-amber'
     });
     setCard('k-edge', {
@@ -1413,7 +1413,7 @@ function renderRegimeBanner(snap) {
   const stateLabel = (r.state || 'unavailable').replace(/_/g, ' ').toUpperCase();
   document.getElementById('rb-state').textContent = stateLabel;
   document.getElementById('rb-exposure').textContent =
-    r.gross_exposure != null ? (+((r.gross_exposure)*100).toFixed(1)) + '% target exposure' : 'Exposure unavailable';
+    r.gross_exposure != null ? (+((r.gross_exposure)*100).toFixed(1)) + '% invested' : 'Exposure unavailable';
   document.getElementById('rb-eq-wt').textContent =
     r.equity_weight != null ? Math.round(r.equity_weight*100)+'%' : '—';
   document.getElementById('rb-macro-wt').textContent =
@@ -1421,10 +1421,10 @@ function renderRegimeBanner(snap) {
   document.getElementById('rb-longs').textContent =
     r.macro_longs && r.macro_longs.length ? r.macro_longs.join(' · ') : 'None';
   document.getElementById('rb-cash').textContent =
-    r.macro_cash && r.macro_cash.length ? r.macro_cash.join(' · ') : '—';
+    Number.isFinite(r.cash_weight) ? pct(r.cash_weight, 1) : '—';
   document.getElementById('rb-asof').textContent =
     r.as_of ? 'as of ' + r.as_of : '';
-  banner.title = `Regime state ${stateLabel}: standalone equity target exposure is ${r.gross_exposure != null ? (+(r.gross_exposure*100).toFixed(2)) + '%' : '—'} (${r.equity_weight != null ? (+(r.equity_weight*100).toFixed(2)) + '%' : '—'} deployed in the 75/25 multi-asset blend alongside ${r.macro_etf_weight != null ? Math.round(r.macro_etf_weight*100) + '%' : '—'} Macro ETFs, with the balance in cash).`;
+  banner.title = `Account exposure as a fraction of NAV: ${pct(r.gross_exposure, 2)} invested, ${pct(r.cash_weight, 2)} cash. Equity and ETF weights sum to invested exposure; all invested positions are included below.`;
 }
 
 function renderEquity(s) {
@@ -1836,12 +1836,14 @@ function renderHoldings(s) {
     }
   });
 
-  const priceText = h.price_as_of ? `Priced as of ${h.price_as_of}` : 'Position price date unavailable; prices omitted';
-  const rebalanceDate = h.last_rebalance || '—';
-  const targetDate = h.target_as_of ? ` · Model scan ${h.target_as_of}` : '';
-  const filingDate = h.latest_filing_date ? ` · Latest SEC filing ${h.latest_filing_date}` : '';
-  document.getElementById('hold-sub').textContent =
-    `${priceText} · Target rebalance date ${rebalanceDate}${targetDate}${filingDate}`;
+  const dateLabel = (label, value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) ? `${label} ${value}` : '';
+  const dates = [dateLabel('Priced as of', h.price_as_of),
+    dateLabel('Target rebalance date', h.last_rebalance),
+    dateLabel('Model scan', h.target_as_of), dateLabel('Latest SEC filing', h.latest_filing_date)].filter(Boolean);
+  const subtitle = document.getElementById('hold-sub');
+  subtitle.textContent = dates.join(' · ');
+  subtitle.hidden = dates.length === 0;
 
   const live = s.live || {};
   const scale = CFG.scale;
@@ -1946,8 +1948,8 @@ function renderHoldings(s) {
   const disclaimer = document.getElementById('hold-disclaimer');
   disclaimer.textContent = scale === 1
     ? 'Paper-ledger positions at the published mark. No real capital is deployed.'
-    : `Current model targets are shown at ${money((live.inception_nav || CFG.base / scale) * scale)} display notional (${scale}× the source account). `
-      + 'Position values are target weight times NAV, not executed lots or the fixed holdings underlying the buy-and-hold live track. '
+    : `Current simulated holdings are shown at ${money((live.inception_nav || CFG.base / scale) * scale)} display notional (${scale}× the source account). `
+      + 'Weights and position values reflect observed closes and cash-outs in this simulated account. '
       + 'Scaling does not model additional market impact or establish trading capacity.';
   const embargoed = positions.filter(p => /^LOCKED-#\d+$/.test(p.ticker)).length;
   const explainer = document.getElementById('hold-embargo-explainer');
@@ -2131,7 +2133,7 @@ const ACCOUNTS = {
     scale: 500,
     base: 5000000,
     marked: false,
-    description: 'The model\u2019s current target allocation, held at equal weight.'
+    description: 'Model allocations are reset at each rebalance; holding weights drift with prices between rebalances.'
   },
   shadow: {
     file: 'shadow_snapshot.json',

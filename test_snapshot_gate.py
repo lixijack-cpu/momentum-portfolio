@@ -391,6 +391,7 @@ def funded_fixture() -> dict:
         dict(ticker="AAA", name="Alpha", sector="Tech", shares=100, price=101.1632,
              value=10116.32, weight=10116.32 / 10711.61, rationale="Fixture")])
     result["monthly_returns"] = [r for r in result["monthly_returns"] if r["month"] < "2026-10"]
+    b.refresh_account_exposure(result)
     return result
 
 
@@ -530,6 +531,9 @@ def masked_fixture() -> dict:
     base["holdings"]["positions"].append(dict(
         ticker="LOCKED-#1", name="Active Position (7-Day Embargo)", sector="Tech",
         shares=None, price=None, value=500.0, weight=500.0 / 11211.61, rationale=None))
+    for position in base['holdings']['positions']:
+        position['weight'] = position['value'] / base['live']['nav']
+    b.refresh_account_exposure(base)
     return base
 
 
@@ -556,6 +560,32 @@ def test_masked_position_may_not_carry_price_or_be_repriced():
             assert "embargoed" in str(exc), str(exc)
         else:
             raise AssertionError("masked snapshot was repriced")
+
+def test_all_track_exposures_reconcile():
+    dates = set()
+    for name in ('portfolio', 'institutional', 'shadow'):
+        payload = json.loads(SNAPSHOT.with_name(name + '_snapshot.json').read_text())
+        b.validate_account_exposure(payload)
+        dates.add(payload['as_of'])
+        for field in ('gross_exposure', 'cash_weight', 'equity_weight'):
+            bad = copy.deepcopy(payload)
+            bad['regime'][field] += .02
+            try:
+                b.validate_account_exposure(bad)
+            except b.SnapshotUpdateError:
+                pass
+            else:
+                raise AssertionError(f'{name} accepted inconsistent {field}')
+        bad = copy.deepcopy(payload)
+        bad['live']['cash'] += bad['live']['nav'] * .02
+        try:
+            b.validate_account_exposure(bad)
+        except b.SnapshotUpdateError as exc:
+            assert 'holdings + cash = 1' in str(exc)
+        else:
+            raise AssertionError(f'{name} accepted invented cash')
+    assert len(dates) == 1, f'track dates disagree: {dates}'
+
 
 def main() -> int:
     for name, fn in sorted(globals().items()):
