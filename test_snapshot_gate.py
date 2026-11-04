@@ -391,6 +391,7 @@ def funded_fixture() -> dict:
         dict(ticker="AAA", name="Alpha", sector="Tech", shares=100, price=101.1632,
              value=10116.32, weight=10116.32 / 10711.61, rationale="Fixture")])
     result["monthly_returns"] = [r for r in result["monthly_returns"] if r["month"] < "2026-10"]
+    result["regime"]["signal_as_of"] = "2026-10-23"  # the backdated book cannot see later signals
     b.refresh_account_exposure(result)
     return result
 
@@ -585,6 +586,37 @@ def test_all_track_exposures_reconcile():
         else:
             raise AssertionError(f'{name} accepted invented cash')
     assert len(dates) == 1, f'track dates disagree: {dates}'
+
+
+def test_regime_publishes_macro_signal_beside_account_exposure():
+    for name in ('portfolio', 'institutional', 'shadow'):
+        payload = json.loads(SNAPSHOT.with_name(name + '_snapshot.json').read_text())
+        regime = payload['regime']
+        assert regime['state'] in b.REGIME_STATES, regime['state']
+        assert regime['deployment_state'] in ('fully_invested', 'partly_invested')
+        assert regime['signal_as_of'] <= regime['as_of']
+        assert regime['macro_signal_longs'] or regime['macro_signal_cash'], name
+        assert not {'macro_longs', 'macro_cash', 'target_weight'} & set(regime), name
+        for mutate, message in (
+            (lambda r: r.update(state='partly_invested'), 'macro regime signal'),
+            (lambda r: r.update(signal_as_of='2999-01-01'), 'signal_as_of'),
+            (lambda r: r.update(macro_signal_longs='UUP'), 'list of tickers'),
+            (lambda r: r.update(macro_longs=[]), 'legacy'),
+            (lambda r: r.pop('deployment_state'), 'deployment_state'),
+        ):
+            bad = copy.deepcopy(payload)
+            mutate(bad['regime'])
+            try:
+                b.validate_account_exposure(bad)
+            except b.SnapshotUpdateError as exc:
+                assert message in str(exc), str(exc)
+            else:
+                raise AssertionError(f'{name} accepted {message} defect')
+        refreshed = copy.deepcopy(payload)
+        b.refresh_account_exposure(refreshed)
+        assert refreshed['regime']['state'] == regime['state'], 'price refresh rewrote the regime signal'
+        assert refreshed['regime']['macro_signal_longs'] == regime['macro_signal_longs']
+        b.validate_account_exposure(refreshed)
 
 
 def main() -> int:

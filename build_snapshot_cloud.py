@@ -858,6 +858,28 @@ def validate_account_exposure(snapshot: dict) -> None:
             raise SnapshotUpdateError('Position weight must equal value / NAV')
     if regime.get('as_of') != snapshot['as_of'] or holdings.get('as_of') != snapshot['as_of']:
         raise SnapshotUpdateError('Exposure date must match account as_of')
+    validate_macro_signal(regime)
+
+
+REGIME_STATES = frozenset({'risk_on', 'trend_off', 'neutral', 'risk_off', 'vol_spike'})
+
+
+def validate_macro_signal(regime: dict) -> None:
+    """The macro regime signal is published beside, never instead of, exposure."""
+    if regime.get('state') not in REGIME_STATES:
+        raise SnapshotUpdateError(f"regime.state must be a macro regime signal, got {regime.get('state')!r}")
+    if regime.get('deployment_state') not in ('fully_invested', 'partly_invested'):
+        raise SnapshotUpdateError('regime.deployment_state is missing')
+    signal_as_of = regime.get('signal_as_of')
+    if not isinstance(signal_as_of, str) or signal_as_of > str(regime.get('as_of')):
+        raise SnapshotUpdateError('regime.signal_as_of must not follow the account mark')
+    for key in ('macro_holdings', 'macro_signal_longs', 'macro_signal_cash'):
+        values = regime.get(key)
+        if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
+            raise SnapshotUpdateError(f'regime.{key} must be a list of tickers')
+    for legacy in ('macro_longs', 'macro_cash'):
+        if legacy in regime:
+            raise SnapshotUpdateError(f'Ambiguous legacy regime field {legacy}')
 
 
 def refresh_account_exposure(snapshot: dict) -> None:
@@ -867,10 +889,12 @@ def refresh_account_exposure(snapshot: dict) -> None:
         return  # Legacy inputs are migrated by the engine's next full rebuild.
     holdings, live = snapshot['holdings'], snapshot['live']
     gross = sum(p['weight'] for p in holdings['positions'])
-    macro = sum(p['weight'] for p in holdings['positions'] if p['ticker'] in regime['macro_longs'])
+    macro = sum(p['weight'] for p in holdings['positions'] if p['ticker'] in regime['macro_holdings'])
+    # ``state`` is the macro regime signal and is never rewritten by a price refresh.
     regime.update(gross_exposure=round(gross, 6), equity_weight=round(gross - macro, 6),
                   macro_etf_weight=round(macro, 6), cash_weight=round(live['cash'] / live['nav'], 6),
-                  state='fully_invested' if gross >= .95 else 'partly_invested', as_of=holdings['as_of'])
+                  deployment_state='fully_invested' if gross >= .95 else 'partly_invested',
+                  as_of=holdings['as_of'])
     holdings.update(cash=live['cash'], cash_weight=regime['cash_weight'])
 
 

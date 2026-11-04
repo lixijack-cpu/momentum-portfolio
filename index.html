@@ -708,20 +708,23 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 </header>
 
 <div id="regime-banner" data-state="risk_on" hidden>
-  <span class="rb-dot"></span><span title="Selected account holdings and cash as fractions of NAV">Account exposure</span>
-  <span class="rb-label" id="rb-state">RISK ON</span>
-  <span class="rb-sep">·</span>
+  <span class="rb-dot"></span><span title="Latest signal from the macro regime engine (applies to every track)">Macro regime</span>
+  <span class="rb-label" id="rb-state">—</span>
+  <span class="rb-sep">|</span>
+  <span title="Selected account holdings and cash as fractions of NAV">Account</span>
   <span id="rb-exposure">—</span>
-  <span class="rb-sep">|</span>
-  <span>Equity <span id="rb-eq-wt" class="rb-tag">—</span></span>
   <span class="rb-sep">·</span>
-  <span>Macro ETF <span id="rb-macro-wt" class="rb-tag">—</span></span>
-  <span class="rb-sep">|</span>
-  <span>ETF holdings: <span id="rb-longs" class="rb-tag">—</span></span>
+  <span>Equities <span id="rb-eq-wt" class="rb-tag">—</span></span>
+  <span class="rb-sep" id="rb-macro-sep" hidden>·</span>
+  <span id="rb-macro-seg" hidden>Macro ETFs <span id="rb-macro-wt" class="rb-tag">—</span></span>
   <span class="rb-sep">·</span>
-  <span>Cash: <span id="rb-cash" class="rb-tag">—</span></span>
+  <span>Cash <span id="rb-cash" class="rb-tag">—</span></span>
+  <span class="rb-sep" id="rb-signal-sep" hidden>|</span>
+  <span id="rb-signal-seg" hidden><span id="rb-signal-label">Macro signal</span> <span id="rb-longs" class="rb-tag">—</span></span>
+  <span class="rb-sep" id="rb-defcash-sep" hidden>·</span>
+  <span id="rb-defcash-seg" hidden>Defensive cash signals: <span id="rb-defcash" class="rb-tag">—</span></span>
   <span class="rb-sep">|</span>
-  <span id="rb-asof" >as of —</span>
+  <span id="rb-asof">as of —</span>
 </div>
 
 <main hidden id="main">
@@ -1404,27 +1407,49 @@ function renderPill(s) {
 }
 
 function renderRegimeBanner(snap) {
+  // Two separate truths: the macro regime engine's signal (``state``), and the selected
+  // account's actual book as fractions of NAV. Macro signal tickers are research signals,
+  // labelled held/unheld against the account's real ETF holdings.
   const banner = document.getElementById('regime-banner');
   if (!banner) return;
   const r = snap && snap.regime;
   if (!r) { banner.hidden = true; return; }
-  banner.dataset.state = r.state || 'risk_on';
+  const $ = id => document.getElementById(id);
+  const show = (ids, on) => ids.forEach(id => { const el = $(id); if (el) el.hidden = !on; });
+  const share = v => Math.round(v * 100) + '%';
+  const list = v => Array.isArray(v) ? v.filter(t => typeof t === 'string' && t) : [];
+  const known = typeof r.state === 'string' && r.state;
+  banner.dataset.state = known ? r.state : 'neutral';
   banner.hidden = false;
-  const stateLabel = (r.state || 'unavailable').replace(/_/g, ' ').toUpperCase();
-  document.getElementById('rb-state').textContent = stateLabel;
-  document.getElementById('rb-exposure').textContent =
-    r.gross_exposure != null ? (+((r.gross_exposure)*100).toFixed(1)) + '% invested' : 'Exposure unavailable';
-  document.getElementById('rb-eq-wt').textContent =
-    r.equity_weight != null ? Math.round(r.equity_weight*100)+'%' : '—';
-  document.getElementById('rb-macro-wt').textContent =
-    r.macro_etf_weight != null ? Math.round(r.macro_etf_weight*100)+'%' : '—';
-  document.getElementById('rb-longs').textContent =
-    r.macro_longs && r.macro_longs.length ? r.macro_longs.join(' · ') : 'None';
-  document.getElementById('rb-cash').textContent =
-    Number.isFinite(r.cash_weight) ? pct(r.cash_weight, 1) : '—';
-  document.getElementById('rb-asof').textContent =
-    r.as_of ? 'as of ' + r.as_of : '';
-  banner.title = `Account exposure as a fraction of NAV: ${pct(r.gross_exposure, 2)} invested, ${pct(r.cash_weight, 2)} cash. Equity and ETF weights sum to invested exposure; all invested positions are included below.`;
+  $('rb-state').textContent = known ? r.state.replace(/_/g, ' ').toUpperCase() : 'UNAVAILABLE';
+  $('rb-exposure').textContent = Number.isFinite(r.gross_exposure)
+    ? (r.gross_exposure * 100).toFixed(1) + '% invested' : 'Exposure unavailable';
+  $('rb-eq-wt').textContent = Number.isFinite(r.equity_weight) ? share(r.equity_weight) : '—';
+  const macroHeld = Number.isFinite(r.macro_etf_weight) && r.macro_etf_weight > 0;
+  $('rb-macro-wt').textContent = macroHeld ? share(r.macro_etf_weight) : '—';
+  show(['rb-macro-sep', 'rb-macro-seg'], macroHeld);
+  $('rb-cash').textContent = Number.isFinite(r.cash_weight) ? share(r.cash_weight) : '—';
+
+  const holdings = new Set(list(r.macro_holdings));
+  const longs = list(r.macro_signal_longs);
+  const held = longs.filter(t => holdings.has(t)), unheld = longs.filter(t => !holdings.has(t));
+  $('rb-signal-label').textContent = !held.length ? 'Macro signal (unheld):'
+    : !unheld.length ? 'Macro signal (held):' : 'Macro signal:';
+  $('rb-longs').textContent = held.length && unheld.length
+    ? [...held.map(t => t + ' (held)'), ...unheld.map(t => t + ' (unheld)')].join(', ')
+    : longs.join(', ');
+  show(['rb-signal-sep', 'rb-signal-seg'], longs.length > 0);
+  const defensive = list(r.macro_signal_cash);
+  $('rb-defcash').textContent = defensive.join(', ');
+  show(['rb-defcash-sep', 'rb-defcash-seg'], defensive.length > 0);
+
+  $('rb-asof').textContent = r.as_of
+    ? 'as of ' + r.as_of + (r.signal_as_of && r.signal_as_of !== r.as_of ? ' (signal ' + r.signal_as_of + ')' : '')
+    : '';
+  const exposure = Number.isFinite(r.gross_exposure) && Number.isFinite(r.cash_weight)
+    ? `Account exposure as a fraction of NAV: ${pct(r.gross_exposure, 2)} invested, ${pct(r.cash_weight, 2)} cash; all invested positions are listed below.`
+    : 'Account exposure unavailable.';
+  banner.title = `Macro regime signal: ${$('rb-state').textContent}. ${exposure} Macro signal tickers are research signals and are not holdings unless listed in the account.`;
 }
 
 function renderEquity(s) {

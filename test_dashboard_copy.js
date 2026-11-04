@@ -107,10 +107,23 @@ async function verify(h,account,s) {
   includes(h.text('sector-sub'),`${s.sector_history.months[0]} to ${s.sector_history.months.at(-1)}`,'sector range');
   includes(h.text('sector-sub'),'reference configuration','sector provenance');
   if(s.regime) {
-    includes(h.text('rb-asof'),s.regime.as_of,'regime source date');
-    assert.equal(h.text('rb-exposure'),`${+(s.regime.gross_exposure*100).toFixed(1)}% invested`);
-    assert.equal(h.text('rb-eq-wt'),Math.round(s.regime.equity_weight*100)+'%');
-    assert.equal(h.text('rb-macro-wt'),Math.round(s.regime.macro_etf_weight*100)+'%');
+    const r=s.regime, shown=id=>!h.document.getElementById(id).hidden;
+    includes(h.text('rb-asof'),r.as_of,'regime source date');
+    // The banner states the macro regime signal, never the account deployment label.
+    assert.equal(h.text('rb-state'),r.state.replace(/_/g,' ').toUpperCase());
+    assert.doesNotMatch(h.text('rb-state'),/INVESTED/);
+    assert.equal(h.text('rb-exposure'),`${(r.gross_exposure*100).toFixed(1)}% invested`);
+    assert.equal(h.text('rb-eq-wt'),Math.round(r.equity_weight*100)+'%');
+    assert.equal(h.text('rb-cash'),Math.round(r.cash_weight*100)+'%');
+    assert.equal(shown('rb-macro-seg'),r.macro_etf_weight>0);
+    if(r.macro_etf_weight>0) assert.equal(h.text('rb-macro-wt'),Math.round(r.macro_etf_weight*100)+'%');
+    if(r.macro_signal_longs.every(t=>!r.macro_holdings.includes(t))) {
+      assert.equal(h.text('rb-signal-label'),'Macro signal (unheld):');
+      assert.equal(h.text('rb-longs'),r.macro_signal_longs.join(', '));
+    }
+    assert.equal(shown('rb-defcash-seg'),r.macro_signal_cash.length>0);
+    assert.equal(h.text('rb-defcash'),r.macro_signal_cash.join(', '));
+    assert.doesNotMatch(normalize(h.document.getElementById('regime-banner').textContent),/\bNone\b/);
   }
   for(const r of s.crash_table) for(const v of [r.period,pct(r.strategy,1),pct(r.spy,1),r.edge_pp.toFixed(1)+'pp']) includes(h.text('crash-body'),v,'stress-window value');
   for(const r of s.crash_table) for(const k of ['strategy_max_drawdown_monthly','spy_max_drawdown_monthly']) if(r[k]!=null) includes(h.text('crash-body'),pct(r[k],1),'month-end stress-window value');
@@ -183,6 +196,33 @@ async function verify(h,account,s) {
   const varied=await harness('?account=shadow',{'shadow_snapshot.json':changed});
   await verify(varied,'shadow',changed);
   console.log('ok: changed metrics, count, live date and session count propagate without data writes');
+  // Exact banner copy: macro regime signal and account book side by side.
+  const bannerCase=async(account,file,regime)=>{
+    const snap=structuredClone(snapshots[account]); Object.assign(snap.regime,regime);
+    const h=await harness('?account='+account,{[file]:snap});
+    const t=id=>h.text(id), shown=id=>!h.document.getElementById(id).hidden;
+    inspectStrings(h); assert.equal(h.errors.length,0);
+    return {t,shown};
+  };
+  const signal={state:'trend_off',macro_signal_longs:['UUP','USO'],macro_signal_cash:['TLT','IEF','TIP','HYG','GLD','DBA']};
+  let b=await bannerCase('institutional','institutional_snapshot.json',{...signal,gross_exposure:.49045,equity_weight:.49045,
+    macro_etf_weight:0,cash_weight:.50955,macro_holdings:[],deployment_state:'partly_invested'});
+  assert.equal(b.t('rb-state'),'TREND OFF');
+  assert.equal(`${b.t('rb-exposure')} · Equities ${b.t('rb-eq-wt')} · Cash ${b.t('rb-cash')}`,'49.0% invested · Equities 49% · Cash 51%');
+  assert.equal(b.shown('rb-macro-seg'),false);
+  assert.equal(`${b.t('rb-signal-label')} ${b.t('rb-longs')} · Defensive cash signals: ${b.t('rb-defcash')}`,
+    'Macro signal (unheld): UUP, USO · Defensive cash signals: TLT, IEF, TIP, HYG, GLD, DBA');
+  b=await bannerCase('','portfolio_snapshot.json',{...signal,gross_exposure:.937,equity_weight:.937,macro_etf_weight:0,
+    cash_weight:.063,macro_holdings:[],deployment_state:'fully_invested'});
+  assert.equal(`${b.t('rb-state')} | ${b.t('rb-exposure')} · Equities ${b.t('rb-eq-wt')} · Cash ${b.t('rb-cash')}`,
+    'TREND OFF | 93.7% invested · Equities 94% · Cash 6%');
+  b=await bannerCase('shadow','shadow_snapshot.json',{...signal,macro_holdings:['UUP']});
+  assert.equal(b.t('rb-signal-label'),'Macro signal:');
+  assert.equal(b.t('rb-longs'),'UUP (held), USO (unheld)');
+  b=await bannerCase('shadow','shadow_snapshot.json',{state:'risk_on',macro_signal_longs:[],macro_signal_cash:[]});
+  assert.equal(b.t('rb-state'),'RISK ON');
+  assert.equal(b.shown('rb-signal-seg'),false); assert.equal(b.shown('rb-defcash-seg'),false);
+  console.log('ok: regime banner separates the macro signal (unheld ETFs) from account exposure');
   for(const [file,text] of Object.entries(before)) assert.equal(fs.readFileSync(path.join(__dirname,file),'utf8'),text,file+' changed');
   console.log('all dashboard copy tests passed (offline; snapshot files unchanged)');
 })().catch(error=>{console.error(error);process.exitCode=1;});
