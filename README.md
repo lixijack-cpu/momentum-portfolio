@@ -12,10 +12,10 @@ half of its cash floor, alongside a tracked short-certainty research sleeve.
 
 | Metric | Retail Track | Institutional Track | Shadow Track | S&P 500 |
 |---|---:|---:|---:|---:|
-| CAGR | 17.11% | 14.00% | 12.28% | 11.04% |
-| Sharpe Ratio | 0.921 | 0.942 | 1.076 | 0.642 |
-| Max Drawdown (month-end) | −20.92% | −19.51% | −10.56% | — |
-| Max Drawdown (daily marks) | −29.60% | −26.70% | −17.95% | −55.19% |
+| CAGR | 17.11% | 14.59% | 12.28% | 11.04% |
+| Sharpe Ratio | 0.960 | 1.022 | 1.076 | 0.642 |
+| Max Drawdown (month-end) | −18.02% | −14.83% | −10.56% | — |
+| Max Drawdown (daily marks) | −24.18% | −21.66% | −17.95% | −55.19% |
 
 Drawdown is quoted on both bases because month-end sampling structurally understates it, and
 both legs of the excess-return figure are measured over the same window.
