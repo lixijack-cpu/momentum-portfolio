@@ -2,17 +2,20 @@
 
 **Live Dashboard:** [lixijack-cpu.github.io/momentum-portfolio](https://lixijack-cpu.github.io/momentum-portfolio/)
 
-A systematic, point-in-time US equity strategy combining fundamental and market signals with
-dynamic regime-based risk management. Long-only, rebalanced monthly.
+A systematic, point-in-time US equity and regime-adaptive multi-asset strategy combining fundamental
+and market signals with dynamic regime-based risk management. Rebalanced monthly with daily regime
+monitoring. Since 2026-11-09, in trend-off and high-volatility regimes the paper account also holds a
+crisis-type macro ETF basket (gold, Treasuries, the US dollar, or an inverse S&P 500 fund) in up to
+half of its cash floor, alongside a tracked short-certainty research sleeve.
 
 **Backtested Performance (Dec 2005 – Jun 2026, 247 out-of-sample months, net of costs)**
 
-| | Strategy | S&P 500 |
-|---|---:|---:|
-| CAGR | 14.00% | 11.04% |
-| Sharpe Ratio | 0.942 | 0.642 |
-| Max Drawdown (month-end) | −19.51% | — |
-| Max Drawdown (daily marks) | −26.70% | −55.19% |
+| Metric | Retail Track | Institutional Track | Shadow Track | S&P 500 |
+|---|---:|---:|---:|---:|
+| CAGR | 17.11% | 14.00% | 12.28% | 11.04% |
+| Sharpe Ratio | 0.921 | 0.942 | 1.076 | 0.642 |
+| Max Drawdown (month-end) | −20.92% | −19.51% | −10.56% | — |
+| Max Drawdown (daily marks) | −29.60% | −26.70% | −17.95% | −55.19% |
 
 Drawdown is quoted on both bases because month-end sampling structurally understates it, and
 both legs of the excess-return figure are measured over the same window.
