@@ -677,7 +677,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 <header hidden id="hdr">
   <div class="brand">
     <h1>Systematic Equity</h1>
-    <p>Regime-Adaptive · Multi-Asset Research · Daily Marks</p>
+    <p>Long-Only · Systematic Research · Daily Marks</p>
   </div>
   <div class="header-right">
     <nav class="account-tabs" id="account-tabs" aria-label="Portfolio model">
@@ -865,7 +865,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <summary>About This Strategy <span class="caret">▼</span></summary>
       <div class="about-body">
         <p>A systematic US equity research dashboard with historical walk-forward results and daily live-track marks. No real capital is deployed.</p>
-        <p>Defensive sleeve: when the regime signal is trend-off or high-volatility, the strategy deploys a crisis-type macro ETF basket (gold, Treasuries, the US dollar, or an inverse S&amp;P 500 fund) in up to half of its cash floor; the rest stays in T-bill cash. The Institutional track additionally layers a gated Short-Certainty overlay during confirmed bear trends.</p>
+        <p>Defensive sleeve: from 2026-11-09, when the regime signal is trend-off or high-volatility, the paper account holds a crisis-type macro ETF basket (gold, Treasuries, the US dollar, or an inverse S&amp;P 500 fund, each held long, no margin or shorting) in up to half of its cash floor; the rest stays in cash. The walk-forward results shown predate this sleeve and do not include it.</p>
         <p id="about-book"></p>
         <p id="about-metrics"></p>
         <p>Historical results use point-in-time inputs and modeled transaction costs. A backtest is not an execution record, and simulated returns do not establish achievable trading capacity.</p>
@@ -2167,7 +2167,7 @@ const ACCOUNTS = {
     scale: 500,
     base: 5000000,
     marked: false,
-    description: 'An alternative tail-drawdown-controlled risk-sizing model monitored alongside the crisis-router and short-certainty research sleeves.'
+    description: 'An alternative tail-drawdown-controlled risk-sizing model monitored alongside the crisis-router research sleeve.'
   }
 };
 
