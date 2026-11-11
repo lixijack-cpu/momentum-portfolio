@@ -3,7 +3,7 @@
 **Live Dashboard:** [lixijack-cpu.github.io/momentum-portfolio](https://lixijack-cpu.github.io/momentum-portfolio/)
 
 A systematic, point-in-time US equity strategy combining fundamental and market signals with
-dynamic regime-based risk management. Long-only, rebalanced monthly. Since 2026-11-09, in trend-off
+dynamic regime-based risk management. Rebalanced monthly (no margin or direct shorting on public tracks; may hold long inverse macro ETFs). Since 2026-11-09, in trend-off
 and high-volatility regimes the retail paper account also holds a crisis-type macro ETF basket (gold,
 Treasuries, the US dollar, or an inverse S&P 500 fund, each held long) in up to half of its cash floor.
 The backtested results below predate this sleeve and do not include it.
