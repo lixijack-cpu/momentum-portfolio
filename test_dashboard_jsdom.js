@@ -54,7 +54,35 @@ async function verify(account, missingDates) {
   console.log(`PASS jsdom: ${account || 'retail'}; ${missingDates ? 'missing dates hidden' : 'real snapshot'}; no null/NaN/undefined; benchmark windows`);
 }
 
+async function verifyHedged() {
+  const dom = new JSDOM(source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, ''), {
+    url: 'https://dashboard.invalid/?account=hedged', runScripts: 'outside-only'
+  });
+  const w = dom.window, errors = [];
+  w.console.error = (...args) => errors.push(args.join(' '));
+  w.matchMedia = () => ({matches: false, addEventListener() {}});
+  w.Chart = class { static defaults = {font: {}, animation: {}, plugins: {tooltip: {}}}; };
+  w.fetch = async url => ({ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(__dirname, path.basename(url.split('?')[0])), 'utf8'))});
+  w.eval(script.replace('\nboot();', '\nwindow.ready = boot();'));
+  await w.ready;
+  assert.deepEqual(errors, []);
+  assert.equal(w.document.getElementById('view-hedged').hidden, false);
+  assert.equal(w.document.getElementById('view-overview').hidden, true);
+  const shorts = w.document.querySelectorAll('.short-badge');
+  assert.ok(shorts.length > 0);
+  for (const badge of shorts) {
+    const row = badge.closest('tr');
+    assert.match(row.textContent, /SHORT/);
+    assert.match(row.querySelector('td:nth-child(3)').textContent, /-\d/);
+    assert.match(row.querySelector('td:nth-child(4)').textContent, /-\d/);
+  }
+  assert.doesNotMatch(w.document.getElementById('view-hedged').textContent, /NaN|undefined|null/);
+  dom.window.close();
+  console.log('PASS jsdom: hedged short badges, negative weights/values, isolated metadata view');
+}
+
 (async () => {
+  await verifyHedged();
   for (const account of Object.keys(files)) {
     await verify(account, false);
     await verify(account, true);

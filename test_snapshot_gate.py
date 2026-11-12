@@ -619,6 +619,110 @@ def test_regime_publishes_macro_signal_beside_account_exposure():
         b.validate_account_exposure(refreshed)
 
 
+
+def hedged_fixture():
+    return json.loads(SNAPSHOT.with_name('institutional_hedged_snapshot.json').read_text())
+
+
+def test_hedged_public_snapshot_passes_gate():
+    base = hedged_fixture()
+    b.validate_input(base)
+    b.validate_account_exposure(base)
+    b.validate(base, copy.deepcopy(base))
+    assert abs(base['gross_exposure'] - sum(abs(p['weight']) for p in base['holdings']['positions'])) < 1e-12
+    assert abs(base['net_exposure'] + base['cash_weight'] - 1) < 1e-10
+    assert all(set(p) == b.HEDGED_POSITION_FIELDS for p in base['holdings']['positions'])
+
+
+def test_hedged_extra_fields_and_secret_labels_are_rejected():
+    for field in ('SUEScore', 'ValueScore', 'RevMomScore', 'FinalScore', 'MLScore',
+                  'IntegratedScore', 'tipief_63', 'c3_kill', 'ORDERLY_BEAR', 'alias', 'shares', 'price', 'entry_date'):
+        for nested in (False, True):
+            bad = hedged_fixture()
+            target = bad['holdings']['positions'][0] if nested else bad
+            target[field] = {'secret': 1}
+            try:
+                b.validate_hedged_snapshot(bad)
+            except b.SnapshotUpdateError:
+                continue
+            raise AssertionError(f'accepted leaked {field}')
+    bad = hedged_fixture()
+    bad['holdings']['positions'][0]['sector'] = 'ORDERLY_BEAR'
+    try:
+        b.validate_hedged_snapshot(bad)
+    except b.SnapshotUpdateError:
+        pass
+    else:
+        raise AssertionError('accepted proprietary data in label')
+
+
+def test_hedged_accounting_and_lock_tampering_rejected():
+    mutations = [
+        lambda s: s.update(cash=s['cash'] + 1),
+        lambda s: s.update(gross_exposure=1.6),
+        lambda s: s.update(net_exposure=0),
+        lambda s: s.update(cash_weight=0),
+        lambda s: s['sector_weights'].update(Unknown=.1),
+        lambda s: s['holdings']['positions'][0].update(weight=float('nan')),
+        lambda s: s['holdings']['positions'][-1].update(side='LONG'),
+        lambda s: s['holdings']['positions'][-1].update(ticker='LOCKED-#999'),
+    ]
+    for mutate in mutations:
+        bad = hedged_fixture()
+        mutate(bad)
+        try:
+            b.validate_hedged_snapshot(bad)
+        except b.SnapshotUpdateError:
+            continue
+        raise AssertionError('accepted hedged accounting/lock defect')
+
+
+def test_hedged_gross_uses_absolute_weights():
+    bad = hedged_fixture()
+    positions = bad['holdings']['positions']
+    long = next(p for p in positions if p['side'] == 'LONG')
+    short = next(p for p in positions if p['side'] == 'SHORT')
+    # Add equal long and short exposure: net and cash stay unchanged, gross breaches.
+    for p, delta in ((long, 1.), (short, -1.)):
+        p['weight'] += delta
+        p['value'] = p['weight'] * bad['nav']
+    try:
+        b.validate_hedged_snapshot(bad)
+    except b.SnapshotUpdateError as exc:
+        assert 'gross' in str(exc)
+    else:
+        raise AssertionError('accepted gross leverage above 1.50')
+
+
+def test_public_cloud_cannot_reprice_hedged_disclosure():
+    with patch.object(b, '_download_closes', side_effect=AssertionError('network forbidden')):
+        try:
+            b.update_snapshot(hedged_fixture())
+        except b.SnapshotUpdateError as exc:
+            assert 'private engine' in str(exc)
+        else:
+            raise AssertionError('repriced public hedged book')
+
+
+def test_signed_positions_require_explicit_short_side():
+    base = funded_fixture()
+    base['live']['cash'] += 250
+    base['holdings']['positions'].append(dict(ticker='SHRT', name='Synthetic Short', sector='Tech',
+        shares=-5, price=50., value=-250., weight=-250/base['live']['nav'], side='SHORT', rationale='Fixture'))
+    b.refresh_account_exposure(base)
+    b.validate_input(base)
+    b.validate_account_exposure(base)
+    b.validate(base, copy.deepcopy(base))
+    bad = copy.deepcopy(base)
+    del bad['holdings']['positions'][-1]['side']
+    try:
+        b.validate_input(bad)
+    except b.SnapshotUpdateError:
+        pass
+    else:
+        raise AssertionError('accepted negative values without SHORT side')
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

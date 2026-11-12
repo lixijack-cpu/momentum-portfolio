@@ -4,6 +4,6 @@
   },
   "private": true,
   "scripts": {
-    "test": "node test_dashboard_copy.js && node test_dashboard_dom.js && node test_holdings_ui.js && node test_dashboard_jsdom.js"
+    "test": "node test_dashboard_copy.js && node test_dashboard_dom.js && node test_holdings_ui.js && node test_dashboard_jsdom.js && node test_hedged_dashboard.js"
   }
 }
