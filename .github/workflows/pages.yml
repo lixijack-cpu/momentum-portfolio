@@ -43,14 +43,14 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Verify rendered DOM for all books
-        run: npm ci --ignore-scripts --no-audit --no-fund && node test_dashboard_jsdom.js
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm test
       # Publish only what the page loads. Scripts, tests and docs stay out of
       # the served site.
       - name: Stage site
         run: |
           mkdir -p _site
           cp index.html favicon.svg og-preview.jpg preview.png \
-             portfolio_snapshot.json institutional_snapshot.json shadow_snapshot.json \
+             portfolio_snapshot.json institutional_snapshot.json shadow_snapshot.json institutional_hedged_snapshot.json \
              retail_holdings_history.json institutional_holdings_history.json _site/
       - name: Setup Pages
         uses: actions/configure-pages@v5

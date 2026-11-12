@@ -649,11 +649,11 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   .brand h1{font-size:1.05rem}
   th,td{padding:11px 8px;font-size:.82rem}
   /* The pill drops onto its own full-width row below the brand and NAV pill rather than
-     competing with them for the header's inline axis. Equal thirds with labels allowed to
-     wrap keeps all three segments on screen and tappable down to 320px. */
+     competing with them for the header's inline axis. Equal quarters with labels allowed to
+     wrap keeps all four segments on screen and tappable down to 320px. */
   .header-right{flex-wrap:wrap;width:100%;justify-content:flex-end}
   .account-tabs{
-    display:grid;grid-template-columns:repeat(3,1fr);
+    display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
     order:3;width:100%;border-radius:16px;
   }
   .account-tabs .tab{
@@ -665,6 +665,13 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}
 }
+.short-badge{display:inline-block;color:var(--amber);background:var(--hover-wash);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:.72rem;font-weight:600}
+.hedged-short{color:var(--amber)}
+.hedged-table{width:100%;table-layout:fixed}
+.hedged-table th:first-child,.hedged-table td:first-child{width:34%;overflow-wrap:anywhere;white-space:normal}
+.hedged-table td,.hedged-table th{white-space:normal;overflow-wrap:anywhere}
+.hedged-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+@media(max-width:600px){.hedged-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.hedged-table th,.hedged-table td{padding:10px 4px;font-size:.75rem}}
 </style>
 </head>
 <body>
@@ -684,6 +691,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
       <button type="button" class="tab" data-account="">Retail<span class="count"></span></button>
       <button type="button" class="tab" data-account="institutional">Institutional<span class="count"></span></button>
       <button type="button" class="tab" data-account="shadow">Shadow<span class="count"></span></button>
+      <button type="button" class="tab" data-account="hedged">Hedged [Exp]<span class="count"></span></button>
     </nav>
     <div class="pill">
       <span class="dot" id="dot" title=""></span>
@@ -877,6 +885,16 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   </section>
 
   </div><!-- /#view-overview -->
+
+  <div id="view-hedged" hidden>
+    <section class="hedged-summary" id="hedged-summary" aria-label="Hedged account exposures"></section>
+    <section class="card">
+      <div class="section-head"><h2>Experimental Long/Short Portfolio</h2><p id="hedged-asof"></p></div>
+      <p class="caption">Simulated institutional forward track. No real capital is deployed. Positions entered within the last 7 calendar days are masked; macro ETFs remain disclosed. Masked shorts show target weight and signed market value. Exposure totals use marked weights.</p>
+      <div id="hedged-holdings"></div>
+    </section>
+    <section class="card"><div class="section-head"><h2>Current Sector Weights</h2><p>Net signed weights as fractions of NAV.</p></div><div id="hedged-sectors"></div></section>
+  </div>
 
   <div id="view-journal" hidden>
     <section class="card">
@@ -2144,6 +2162,47 @@ function fail(msg) {
    because of its size and it stays at 1x.
 
    All books are priced and published by the private daily service. */
+// The experimental track intentionally has no certified backtest or signal panels.
+function renderHedged(s) {
+  if (s.account !== 'hedged' || s.schema_version !== 'hedged-1.0' || !Array.isArray(s.holdings?.positions)) {
+    throw new TypeError('Invalid hedged metadata snapshot');
+  }
+  const positions = s.holdings.positions;
+  const macro = new Set(['TLT', 'IEF', 'TIP', 'HYG', 'GLD', 'UUP', 'USO', 'DBA', 'SH']);
+  const shorts = positions.filter(p => p.side === 'SHORT');
+  const longs = positions.filter(p => p.side === 'LONG' && !macro.has(p.ticker));
+  const etfs = positions.filter(p => p.side === 'LONG' && macro.has(p.ticker));
+  document.getElementById('model-description').textContent = CFG.description;
+  document.querySelectorAll('#account-tabs .tab').forEach(tab => {
+    tab.querySelector('.count').textContent = tab.dataset.account === 'hedged' ? `${positions.length} names` : '';
+  });
+  document.getElementById('pill-nav').textContent = money2(s.nav);
+  document.getElementById('pill-sub').textContent = `Live (simulated) · as of ${s.as_of}`;
+  document.getElementById('dot').title = `Published mark ${s.as_of}`;
+  document.getElementById('regime-banner').hidden = true;
+  document.getElementById('hedged-asof').textContent = `Marked as of ${s.as_of} · ${longs.length} long equities · ${etfs.length} macro ETFs · ${shorts.length} shorts`;
+  document.getElementById('hedged-summary').innerHTML = [
+    ['Simulated NAV', money2(s.nav)], ['Gross Exposure', pct(s.gross_exposure)],
+    ['Net Exposure', pct(s.net_exposure)], ['Cash Weight', pct(s.cash_weight)]
+  ].map(([label, value]) => `<div class="card stat"><div class="label">${esc(label)}</div><div class="value num">${esc(value)}</div></div>`).join('');
+  const table = rows => `<div class="scroll-x"><table class="hedged-table"><thead><tr><th>Position / Side</th><th>Sector</th><th>Weight</th><th>Market Value</th></tr></thead><tbody>`
+    + [...rows].sort((a, b) => a.ticker.localeCompare(b.ticker)).map(p => {
+      const short = p.side === 'SHORT';
+      const locked = /^LOCKED-(?:SHORT-)?#\d+$/.test(p.ticker);
+      const weight = short && locked ? p.target_weight : p.weight;
+      return `<tr><td>${esc(p.ticker)}${short ? ' <span class="short-badge">SHORT</span>' : ''}</td><td>${esc(p.sector)}</td>`
+        + `<td class="num${short ? ' hedged-short' : ''}">${pct(weight, 2)}${short && locked ? ' target' : ''}</td>`
+        + `<td class="num${short ? ' hedged-short' : ''}">${money2(p.value)}</td></tr>`;
+    }).join('') + '</tbody></table></div>';
+  document.getElementById('hedged-holdings').innerHTML =
+    `<details><summary>Long Equity Book · ${longs.length} positions <span class="caret">▼</span></summary>${table(longs)}</details>`
+    + `<h3>Macro ETF Sleeve · ${etfs.length} positions</h3>${table(etfs)}`
+    + `<h3>Short Overlay · ${shorts.length} positions</h3>${table(shorts)}`;
+  document.getElementById('hedged-sectors').innerHTML = '<table><thead><tr><th>Sector</th><th>Net Weight</th></tr></thead><tbody>'
+    + Object.entries(s.sector_weights).map(([sector, weight]) => `<tr><td>${esc(sector)}</td><td class="num">${pct(weight)}</td></tr>`).join('')
+    + '</tbody></table>';
+}
+
 const ACCOUNTS = {
   '': {
     file: 'portfolio_snapshot.json',
@@ -2168,13 +2227,18 @@ const ACCOUNTS = {
     base: 5000000,
     marked: false,
     description: 'An alternative tail-drawdown-controlled risk-sizing model monitored alongside the crisis-router research sleeve.'
+  },
+  hedged: {
+    file: 'institutional_hedged_snapshot.json',
+    label: 'Hedged [Exp]', scale: 1, base: 10000, marked: false,
+    description: 'Experimental institutional long/short forward track with momentum equities, a macro ETF sleeve and a short overlay. Single-name positions are embargoed for 7 days.'
   }
 };
 
 /* The institutional book was published under ?account=production before it got its own
    snapshot file. Links to it are in the wild, so the old key resolves to the new one
    rather than silently falling back to Retail. */
-const ACCOUNT_ALIASES = {production: 'institutional'};
+const ACCOUNT_ALIASES = {production: 'institutional', institutional_hedged: 'hedged'};
 
 /* Resolved once in boot(), then read by the renderers. Deriving the scale per call
    site instead lets the three copies drift apart, which is how the chart and the
@@ -2478,7 +2542,7 @@ async function loadHistory(account) {
     book.hidden = true;
     document.getElementById('history-count').textContent = '';
     document.getElementById('history-note').textContent = '';
-    showHistoryEmpty(EMPTY_SHADOW);
+    showHistoryEmpty(account === 'hedged' ? 'Position history is not published for this experimental book.' : EMPTY_SHADOW);
     return;
   }
 
@@ -2540,11 +2604,14 @@ function writeUrl(account, view) {
 }
 
 function setView(view) {
+  const hedged = resolveAccount() === 'hedged';
+  if (hedged) view = 'overview';
+  document.getElementById('view-hedged').hidden = !hedged;
   document.querySelectorAll('#view-tabs .tab').forEach(tab => {
     if (tab.dataset.view === view) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   });
-  document.getElementById('view-overview').hidden = view !== 'overview';
+  document.getElementById('view-overview').hidden = hedged || view !== 'overview';
   document.getElementById('view-journal').hidden = view !== 'journal';
   writeUrl(resolveAccount(), view);
   if (view === 'journal') loadHistory(resolveAccount());
@@ -2604,15 +2671,21 @@ async function loadModelData(account, {initial = false} = {}) {
 
 
     SNAP = snap;
-    renderHeadline(snap);
-    renderPill(snap);
-    renderRegimeBanner(snap);
-    renderEquity(snap);
-    renderCrash(snap);
-    renderSectors(snap);
-    renderHeatmap(snap);
-    renderHoldings(snap);
-    renderSectorConviction(snap);
+    document.getElementById('view-tabs').hidden = account === 'hedged';
+    document.getElementById('view-hedged').hidden = account !== 'hedged';
+    if (account === 'hedged') {
+      renderHedged(snap);
+    } else {
+      renderHeadline(snap);
+      renderPill(snap);
+      renderRegimeBanner(snap);
+      renderEquity(snap);
+      renderCrash(snap);
+      renderSectors(snap);
+      renderHeatmap(snap);
+      renderHoldings(snap);
+      renderSectorConviction(snap);
+    }
   } catch (err) {
     console.error('[dashboard] render failed', err);
     fail('Dashboard could not be rendered. Please try again later.');
@@ -2624,8 +2697,9 @@ async function loadModelData(account, {initial = false} = {}) {
   // Keeps the active model linkable and survivable across a refresh, without the full
   // navigation the old anchor-based tabs cost. The pane selection rides along, so a
   // model swap does not silently bounce the visitor back to Overview.
-  const view = resolveView();
+  const view = account === 'hedged' ? 'overview' : resolveView();
   writeUrl(account, view);
+  setView(view);
 
   // The history pane is per-book, so a swap while it is open has to refetch and
   // re-render it; the payloads are cached, so returning to a book is instant. On the

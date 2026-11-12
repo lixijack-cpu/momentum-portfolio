@@ -115,11 +115,16 @@ BENCHMARK_TICKER = "SPY"
 # Positions entered within the public embargo window are published with an opaque
 # label and no price or share count. They carry sector, weight and value only, so
 # they still reconcile to NAV but cannot be repriced from a public quote.
-_MASKED_TICKER = re.compile(r"LOCKED-#[0-9]+")
+_MASKED_TICKER = re.compile(r"LOCKED-(?:SHORT-)?#[0-9]+")
 
 
 def is_masked(position: dict) -> bool:
     return bool(_MASKED_TICKER.fullmatch(str(position.get("ticker", ""))))
+
+
+def is_short(position: dict, snapshot: dict) -> bool:
+    return (str(position.get("side", "")).upper() == "SHORT"
+            or snapshot.get("account") == "hedged" and position.get("weight", 0) < 0)
 
 
 class SnapshotUpdateError(RuntimeError):
@@ -444,6 +449,9 @@ def _number(value: object, label: str) -> float:
 
 def validate_input(base: dict) -> float:
     """Check the input mark before any market request; return its explicit/legacy cash."""
+    if base.get("schema_version") == "hedged-1.0":
+        validate_hedged_snapshot(base)
+        return base["cash"]
     live, holdings = base["live"], base["holdings"]
     nav = _number(live["nav"], "live.nav")
     if nav <= 0:
@@ -463,14 +471,15 @@ def validate_input(base: dict) -> float:
             if p.get("shares") is not None or p.get("price") is not None:
                 raise SnapshotUpdateError("Masked position must not publish shares or price")
             value = _number(p["value"], "value")
-            if value <= 0:
-                raise SnapshotUpdateError("Masked position value must be positive")
+            if value == 0 or (value < 0) != is_short(p, base):
+                raise SnapshotUpdateError("Masked position value must match its long/short side")
             total += value
             continue
         shares = _number(p["shares"], "shares")
         price = _number(p["price"], "price")
         value = _number(p["value"], "value")
-        if min(shares, price, value) <= 0 or shares != int(shares):
+        short = is_short(p, base)
+        if price <= 0 or shares == 0 or value == 0 or (shares < 0) != short or (value < 0) != short or (not short and shares != int(shares)):
             raise SnapshotUpdateError("Input shares/price/value must be positive; shares must be integer")
         if abs(value - round(shares * price, 2)) > .011:
             raise SnapshotUpdateError("Input value does not equal shares * price")
@@ -480,6 +489,10 @@ def validate_input(base: dict) -> float:
         raise SnapshotUpdateError("Legacy cash must be within 0 to 15% of NAV; explicit cash cannot be negative")
     if abs(total + cash - nav) > .05:
         raise SnapshotUpdateError("Input positions + cash do not reconcile to NAV")
+    if any(is_short(p, base) for p in holdings['positions']):
+        weights = [_number(p['weight'], 'weight') for p in holdings['positions']]
+        if abs(sum(weights) + cash / nav - 1) > 1e-6 or sum(abs(w) for w in weights) > 1.50 + 1e-10:
+            raise SnapshotUpdateError("Invalid short accounting or gross exposure above 1.50")
     curve = base["equity_curve"]["live"]
     factor = _number(live["rebase_factor"], "rebase_factor")
     if factor <= 0 or not curve or curve[-1]["d"] != mark:
@@ -525,6 +538,10 @@ def _verify_legacy_cash(base: dict, closes: pd.DataFrame, cash: float) -> None:
 
 def update_snapshot(base: dict) -> tuple[dict, dict]:
     """Return a price-refreshed copy of ``base`` plus a summary of what moved."""
+
+    if base.get("account") == "hedged" or base.get("schema_version") == "hedged-1.0":
+        validate_hedged_snapshot(base)
+        raise SnapshotUpdateError("Hedged disclosure must be refreshed by the private engine; public repricing is disabled")
 
     snapshot = copy.deepcopy(base)
 
@@ -830,20 +847,93 @@ def _validate_sector_conviction(snapshot: dict) -> None:
             seen_tickers.add(ticker)
 
 
+HEDGED_FIELDS = frozenset({"schema_version", "account", "as_of", "nav", "cash", "cash_weight",
+                          "gross_exposure", "net_exposure", "sector_weights", "holdings"})
+HEDGED_POSITION_FIELDS = frozenset({"ticker", "side", "sector", "weight", "value", "target_weight"})
+
+
+def validate_hedged_snapshot(snapshot: dict) -> None:
+    """Fail closed on extra data, broken signed accounting, and masked identifiers.
+
+    Public payloads contain no entry timestamps, quotes, shares, model parameters,
+    or history. Only the private exporter can establish embargo maturity.
+    """
+    if set(snapshot) != HEDGED_FIELDS or snapshot.get('schema_version') != 'hedged-1.0' or snapshot.get('account') != 'hedged':
+        raise SnapshotUpdateError('Invalid hedged metadata allowlist')
+    mark = snapshot['as_of']
+    try:
+        if not isinstance(mark, str) or datetime.strptime(mark, '%Y-%m-%d').strftime('%Y-%m-%d') != mark:
+            raise ValueError()
+    except ValueError:
+        raise SnapshotUpdateError('Invalid hedged date') from None
+    nav, cash = _number(snapshot['nav'], 'nav'), _number(snapshot['cash'], 'cash')
+    if nav <= 0 or cash < 0:
+        raise SnapshotUpdateError('Invalid hedged NAV/cash')
+    holdings = snapshot['holdings']
+    if not isinstance(holdings, dict) or set(holdings) != {'as_of', 'positions'} or holdings['as_of'] != mark:
+        raise SnapshotUpdateError('Invalid hedged holdings metadata/date')
+    positions = holdings['positions']
+    if not isinstance(positions, list) or not positions:
+        raise SnapshotUpdateError('Empty hedged holdings')
+    seen, sectors = set(), {}
+    for p in positions:
+        if not isinstance(p, dict) or set(p) != HEDGED_POSITION_FIELDS:
+            raise SnapshotUpdateError('Hedged position violates metadata allowlist')
+        ticker, sector, side = p['ticker'], p['sector'], p['side']
+        if not isinstance(ticker, str) or not re.fullmatch(r'[A-Z][A-Z0-9.\-]*|LOCKED-(?:SHORT-)?#[1-9][0-9]*', ticker) or ticker in seen:
+            raise SnapshotUpdateError('Invalid/duplicate hedged ticker')
+        seen.add(ticker)
+        if not isinstance(sector, str) or not sector.strip() or side not in ('LONG', 'SHORT'):
+            raise SnapshotUpdateError('Invalid hedged sector/side')
+        weight, value, target = (_number(p[k], k) for k in ('weight', 'value', 'target_weight'))
+        if any(v == 0 or (v < 0) != (side == 'SHORT') for v in (weight, value, target)):
+            raise SnapshotUpdateError('Hedged side/value/weight signs disagree')
+        if is_masked(p) and ticker.startswith('LOCKED-SHORT-') != (side == 'SHORT'):
+            raise SnapshotUpdateError('Hedged lock must match side')
+        if abs(value / nav - weight) > 1e-10:
+            raise SnapshotUpdateError('Hedged weight must equal value / NAV')
+        sectors[sector] = sectors.get(sector, 0.) + weight
+    net = math.fsum(p['weight'] for p in positions)
+    gross = math.fsum(abs(p['weight']) for p in positions)
+    if gross > 1.50 + 1e-10:
+        raise SnapshotUpdateError('Hedged gross exposure exceeds 1.50')
+    checks = [(net + cash / nav, 1.), (snapshot['cash_weight'], cash / nav),
+              (snapshot['net_exposure'], net), (snapshot['gross_exposure'], gross)]
+    if any(abs(_number(a, 'exposure') - b) > 1e-10 for a, b in checks):
+        raise SnapshotUpdateError('Hedged net holdings + cash = 1 or exposure mismatch')
+    if abs(math.fsum(p['value'] for p in positions) + cash - nav) > 1e-8:
+        raise SnapshotUpdateError('Hedged values + cash must equal NAV')
+    weights = snapshot['sector_weights']
+    if not isinstance(weights, dict) or set(weights) != set(sectors) or any(abs(_number(weights[s], 'sector weight') - w) > 1e-10 for s, w in sectors.items()):
+        raise SnapshotUpdateError('Hedged sector weights do not reconcile')
+    # Scan values too: a secret added to a label must fail closed.
+    text = json.dumps(snapshot, allow_nan=False).casefold()
+    forbidden = ('suescore', 'valuescore', 'revmomscore', 'finalscore', 'mlscore', 'integratedscore',
+                 'tipief_63', 'c3_kill', 'orderly_bear', 'permno', 'raw_score')
+    if any(term in text for term in forbidden):
+        raise SnapshotUpdateError('Hedged privacy firewall rejected proprietary data')
+
+
 def validate_account_exposure(snapshot: dict) -> None:
     """Every track publishes all invested holdings and cash as fractions of NAV."""
+    if snapshot.get('schema_version') == 'hedged-1.0':
+        validate_hedged_snapshot(snapshot)
+        return
     live, holdings, regime = snapshot['live'], snapshot['holdings'], snapshot['regime']
     nav = _number(live.get('nav'), 'live.nav')
     cash = _number(live.get('cash'), 'live.cash')
     if nav <= 0 or cash < 0:
         raise SnapshotUpdateError('Invalid exposure NAV/cash')
-    gross = sum(_number(p.get('weight'), 'position.weight') for p in holdings['positions'])
-    if any(p['weight'] < 0 for p in holdings['positions']):
+    net = sum(_number(p.get('weight'), 'position.weight') for p in holdings['positions'])
+    gross = sum(abs(p['weight']) for p in holdings['positions'])
+    if any(p['weight'] < 0 and not is_short(p, snapshot) for p in holdings['positions']):
         raise SnapshotUpdateError('Negative holding weight')
+    if gross > 1.50 + 1e-10:
+        raise SnapshotUpdateError('Gross exposure exceeds 1.50')
     if regime.get('weight_basis') != 'fraction_of_nav':
         raise SnapshotUpdateError('Exposure weight_basis must be fraction_of_nav')
     checks = [
-        ('holdings + cash = 1', gross + cash / nav, 1.),
+        ('holdings + cash = 1', net + cash / nav, 1.),
         ('gross_exposure matches holdings', _number(regime.get('gross_exposure'), 'gross_exposure'), gross),
         ('cash_weight matches cash', _number(regime.get('cash_weight'), 'cash_weight'), cash / nav),
         ('holdings.cash_weight matches cash', _number(holdings.get('cash_weight'), 'holdings.cash_weight'), cash / nav),
@@ -888,8 +978,8 @@ def refresh_account_exposure(snapshot: dict) -> None:
     if regime.get('weight_basis') != 'fraction_of_nav':
         return  # Legacy inputs are migrated by the engine's next full rebuild.
     holdings, live = snapshot['holdings'], snapshot['live']
-    gross = sum(p['weight'] for p in holdings['positions'])
-    macro = sum(p['weight'] for p in holdings['positions'] if p['ticker'] in regime['macro_holdings'])
+    gross = sum(abs(p['weight']) for p in holdings['positions'])
+    macro = sum(abs(p['weight']) for p in holdings['positions'] if p['ticker'] in regime['macro_holdings'])
     # ``state`` is the macro regime signal and is never rewritten by a price refresh.
     regime.update(gross_exposure=round(gross, 6), equity_weight=round(gross - macro, 6),
                   macro_etf_weight=round(macro, 6), cash_weight=round(live['cash'] / live['nav'], 6),
@@ -900,6 +990,13 @@ def refresh_account_exposure(snapshot: dict) -> None:
 
 def validate(base: dict, updated: dict) -> None:
     """Refuse to publish anything that is not a pure price refresh of ``base``."""
+
+    if base.get('schema_version') == 'hedged-1.0':
+        validate_hedged_snapshot(base)
+        validate_hedged_snapshot(updated)
+        if base != updated:
+            raise SnapshotUpdateError('Hedged disclosure may only be replaced by the private exporter')
+        return
 
     expected_shape = (
         EXPECTED_TOP_LEVEL if "sector_conviction" in base else LEGACY_TOP_LEVEL
@@ -968,7 +1065,7 @@ def validate(base: dict, updated: dict) -> None:
             continue
         if not isinstance(new["price"], (int, float)) or new["price"] <= 0:
             raise SnapshotUpdateError(f"Position {new['ticker']} has a non-positive price")
-        if new["weight"] <= 0:
+        if new["weight"] == 0 or (new["weight"] < 0) != is_short(new, updated):
             raise SnapshotUpdateError(f"Position {new['ticker']} has a non-positive weight")
         expected_value = round(float(new["shares"]) * float(new["price"]), 2)
         if abs(float(new["value"]) - expected_value) > 0.01:
@@ -977,7 +1074,10 @@ def validate(base: dict, updated: dict) -> None:
             )
 
     total_weight = sum(float(p["weight"]) for p in new_positions)
-    if total_weight > 1.0 + 1e-6:
+    if any(is_short(p, updated) for p in new_positions):
+        if sum(abs(p['weight']) for p in new_positions) > 1.50 + 1e-10:
+            raise SnapshotUpdateError('Gross exposure exceeds 1.50')
+    elif total_weight > 1.0 + 1e-6:
         raise SnapshotUpdateError(f"Weights sum to {total_weight:.6f}, above 100%")
 
     live = updated["live"]
