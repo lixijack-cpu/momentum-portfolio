@@ -694,6 +694,74 @@ def test_hedged_gross_uses_absolute_weights():
         raise AssertionError('accepted gross leverage above 1.50')
 
 
+
+def test_hedged_live_metrics_and_forward_curves_reconcile():
+    base = hedged_fixture()
+    b.validate_hedged_snapshot(base)
+    live, curves = base['live'], base['equity_curve']
+    assert set(curves) == {'live', 'spy'}
+    assert live['nav'] == round(base['nav'], 2)
+    assert curves['live'][-1]['v'] == live['nav']
+    assert abs(live['since_inception_return'] - (base['nav'] / live['inception_nav'] - 1)) < 1e-6
+    assert curves['spy'][0]['v'] == live['inception_nav']
+    assert live['days_live'] == len(curves['live']) == len(curves['spy'])
+    assert [p['d'] for p in curves['spy']] == [p['d'] for p in curves['live']]
+    assert all(p['d'] >= live['inception_date'] for p in curves['live'])
+    assert len(json.dumps(base, separators=(',', ':')).encode()) + 1 < 15000
+
+
+def test_hedged_performance_tampering_is_rejected():
+    mutations = [
+        lambda s: s['live'].update(nav=s['live']['nav'] + 1),
+        lambda s: s['live'].update(since_inception_return=.5),
+        lambda s: s['live'].update(excess_return=.5),
+        lambda s: s['live'].update(excess_return_iwm=.5),
+        lambda s: s['live'].update(benchmark_return=None),
+        lambda s: s['live'].update(benchmark_return_iwm=float('nan')),
+        lambda s: s['live'].update(daily_pnl=999.),
+        lambda s: s['live'].update(daily_return=.5),
+        lambda s: s['live'].update(benchmark_daily_return=.5),
+        lambda s: s['live'].update(days_live=999),
+        lambda s: s['live'].update(inception_nav=5000.),
+        lambda s: s['live'].update(last_updated='2026-01-01'),
+        lambda s: s['live'].update(FinalScore=1),
+        lambda s: s['equity_curve'].update(backtest=[]),
+        lambda s: s['equity_curve']['live'][-1].update(v=100),
+        lambda s: s['equity_curve']['spy'][0].update(v=100),
+        lambda s: s['equity_curve']['spy'].pop(),
+        lambda s: s['equity_curve']['live'][0].update(d='2000-01-01'),
+        lambda s: s['equity_curve']['spy'][0].update(MLScore=.5),
+        lambda s: s['regime'].update(tipief_63=.5),
+        lambda s: s['regime'].update(state='ORDERLY_BEAR'),
+        lambda s: s['regime'].update(signal_as_of='2999-01-01'),
+    ]
+    for mutate in mutations:
+        bad = hedged_fixture()
+        mutate(bad)
+        try:
+            b.validate_hedged_snapshot(bad)
+        except b.SnapshotUpdateError:
+            continue
+        raise AssertionError('accepted invalid hedged performance or private metadata')
+
+
+def test_hedged_payload_budget_is_enforced():
+    bad = hedged_fixture()
+    p = bad['holdings']['positions'][0]
+    old = p['sector']
+    p['sector'] += 'X' * 15000
+    bad['sector_weights'][old] -= p['weight']
+    if not any(row['sector'] == old for row in bad['holdings']['positions']):
+        del bad['sector_weights'][old]
+    bad['sector_weights'][p['sector']] = p['weight']
+    try:
+        b.validate_hedged_snapshot(bad)
+    except b.SnapshotUpdateError as exc:
+        assert '15 KB' in str(exc)
+    else:
+        raise AssertionError('accepted oversized hedged payload')
+
+
 def test_public_cloud_cannot_reprice_hedged_disclosure():
     with patch.object(b, '_download_closes', side_effect=AssertionError('network forbidden')):
         try:

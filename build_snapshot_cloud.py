@@ -463,10 +463,15 @@ def validate_input(base: dict) -> float:
         raise SnapshotUpdateError("Input price_as_of must equal live.last_updated")
     tickers = set()
     total = 0.0
+    short_book = any(is_short(p, base) for p in holdings['positions'])
     for p in holdings["positions"]:
         if p["ticker"] in tickers:
             raise SnapshotUpdateError("Input contains duplicate tickers")
         tickers.add(p["ticker"])
+        weight = _number(p['weight'], 'weight')
+        value = _number(p['value'], 'value')
+        if weight == 0 or (weight < 0) != is_short(p, base) or (short_book and abs(weight - value / nav) > 1e-5):
+            raise SnapshotUpdateError('Input weight must match side and value / NAV')
         if is_masked(p):
             if p.get("shares") is not None or p.get("price") is not None:
                 raise SnapshotUpdateError("Masked position must not publish shares or price")
@@ -848,15 +853,88 @@ def _validate_sector_conviction(snapshot: dict) -> None:
 
 
 HEDGED_FIELDS = frozenset({"schema_version", "account", "as_of", "nav", "cash", "cash_weight",
-                          "gross_exposure", "net_exposure", "sector_weights", "holdings"})
+                          "gross_exposure", "net_exposure", "sector_weights", "holdings",
+                          "live", "equity_curve", "regime"})
 HEDGED_POSITION_FIELDS = frozenset({"ticker", "side", "sector", "weight", "value", "target_weight"})
+HEDGED_LIVE_FIELDS = frozenset({"nav", "inception_date", "inception_nav", "since_inception_return",
+    "daily_return", "daily_pnl", "days_live", "last_updated", "benchmark_return", "excess_return",
+    "benchmark_return_iwm", "excess_return_iwm", "benchmark_daily_return", "benchmark_daily_return_iwm"})
+
+
+def _validate_hedged_performance(snapshot: dict) -> None:
+    """Validate only observed forward marks and their rounded display statistics."""
+    live, curves, regime = (snapshot[k] for k in ('live', 'equity_curve', 'regime'))
+    if not isinstance(live, dict) or set(live) != HEDGED_LIVE_FIELDS:
+        raise SnapshotUpdateError('Invalid hedged live field allowlist')
+    if not isinstance(curves, dict) or set(curves) != {'live', 'spy'}:
+        raise SnapshotUpdateError('Hedged curves may contain only live and SPY forward marks')
+    if not isinstance(regime, dict) or set(regime) != {'state', 'sleeve', 'as_of', 'signal_as_of'}:
+        raise SnapshotUpdateError('Invalid hedged regime allowlist')
+    if (regime['state'] not in REGIME_STATES
+            or regime['sleeve'] not in {'INFLATION_RATES', 'DEFLATION_CREDIT', 'MIXED', 'UNCLASSIFIED'}
+            or regime['as_of'] != snapshot['as_of']):
+        raise SnapshotUpdateError('Invalid hedged public regime/sleeve/date')
+    def date(value):
+        try:
+            if not isinstance(value, str) or datetime.strptime(value, '%Y-%m-%d').strftime('%Y-%m-%d') != value:
+                raise ValueError()
+        except ValueError:
+            raise SnapshotUpdateError('Invalid hedged forward date') from None
+        return value
+    start, end = date(live['inception_date']), date(live['last_updated'])
+    if start > end or end != snapshot['as_of'] or date(regime['signal_as_of']) > end:
+        raise SnapshotUpdateError('Hedged performance dates must match the live window')
+    dates = None
+    for key in ('live', 'spy'):
+        points = curves[key]
+        if not isinstance(points, list) or not points:
+            raise SnapshotUpdateError('Hedged forward curve is empty')
+        labels = []
+        for point in points:
+            if not isinstance(point, dict) or set(point) != {'d', 'v'}:
+                raise SnapshotUpdateError('Invalid hedged curve point allowlist')
+            labels.append(date(point['d']))
+            if _number(point['v'], 'curve value') <= 0:
+                raise SnapshotUpdateError('Hedged curve values must be positive')
+        if labels != sorted(set(labels)) or labels[0] != start or labels[-1] != end:
+            raise SnapshotUpdateError('Hedged curve must have unique ordered forward-only dates')
+        if dates is not None and labels != dates:
+            raise SnapshotUpdateError('Hedged SPY curve must align to every live mark')
+        dates = labels
+    if isinstance(live['days_live'], bool) or not isinstance(live['days_live'], int) or live['days_live'] != len(dates):
+        raise SnapshotUpdateError('Hedged days_live must count forward marks')
+    for field in HEDGED_LIVE_FIELDS - {'inception_date', 'last_updated'}:
+        _number(live[field], 'live.' + field)
+    if live['inception_nav'] != 10000. or live['nav'] != round(snapshot['nav'], 2):
+        raise SnapshotUpdateError('Hedged live NAV/inception capital mismatch')
+    if curves['live'][-1]['v'] != live['nav'] or curves['spy'][0]['v'] != live['inception_nav']:
+        raise SnapshotUpdateError('Hedged curve tail or benchmark rebase mismatch')
+    if curves['live'][0]['v'] != live['inception_nav']:
+        raise SnapshotUpdateError('Hedged forward curve must start at inception capital')
+    checks = [(live['since_inception_return'], snapshot['nav'] / live['inception_nav'] - 1, 5.01e-7)]
+    previous = curves['live'][-2]['v'] if len(dates) > 1 else live['nav']
+    checks += [(live['daily_pnl'], live['nav'] - previous, .011),
+               (live['daily_return'], live['nav'] / previous - 1, 1.01e-6),
+               (live['benchmark_return'], curves['spy'][-1]['v'] / live['inception_nav'] - 1, 1.01e-6)]
+    spy_previous = curves['spy'][-2]['v'] if len(dates) > 1 else curves['spy'][-1]['v']
+    checks.append((live['benchmark_daily_return'], curves['spy'][-1]['v'] / spy_previous - 1, 1.51e-6))
+    for suffix in ('', '_iwm'):
+        checks.append((live['excess_return' + suffix],
+                       live['since_inception_return'] - live['benchmark_return' + suffix], 5.01e-7))
+        if live['benchmark_return' + suffix] <= -1 or live['benchmark_daily_return' + suffix] <= -1:
+            raise SnapshotUpdateError('Invalid hedged benchmark return')
+    if len(dates) == 1 and any(live[k] != 0 for k in ('daily_pnl', 'daily_return', 'benchmark_return',
+            'benchmark_return_iwm', 'benchmark_daily_return', 'benchmark_daily_return_iwm')):
+        raise SnapshotUpdateError('Hedged first session must use its inception baseline')
+    if any(abs(actual - expected) > tolerance for actual, expected, tolerance in checks):
+        raise SnapshotUpdateError('Hedged performance does not reconcile to NAV/curves/benchmarks')
 
 
 def validate_hedged_snapshot(snapshot: dict) -> None:
     """Fail closed on extra data, broken signed accounting, and masked identifiers.
 
     Public payloads contain no entry timestamps, quotes, shares, model parameters,
-    or history. Only the private exporter can establish embargo maturity.
+    or historical research. Only the private exporter can establish embargo maturity.
     """
     if set(snapshot) != HEDGED_FIELDS or snapshot.get('schema_version') != 'hedged-1.0' or snapshot.get('account') != 'hedged':
         raise SnapshotUpdateError('Invalid hedged metadata allowlist')
@@ -906,8 +984,12 @@ def validate_hedged_snapshot(snapshot: dict) -> None:
     weights = snapshot['sector_weights']
     if not isinstance(weights, dict) or set(weights) != set(sectors) or any(abs(_number(weights[s], 'sector weight') - w) > 1e-10 for s, w in sectors.items()):
         raise SnapshotUpdateError('Hedged sector weights do not reconcile')
+    _validate_hedged_performance(snapshot)
     # Scan values too: a secret added to a label must fail closed.
-    text = json.dumps(snapshot, allow_nan=False).casefold()
+    serialized = json.dumps(snapshot, separators=(',', ':'), allow_nan=False)
+    if len(serialized.encode('utf-8')) + 1 >= 15_000:
+        raise SnapshotUpdateError('Hedged snapshot exceeds the 15 KB payload budget')
+    text = serialized.casefold()
     forbidden = ('suescore', 'valuescore', 'revmomscore', 'finalscore', 'mlscore', 'integratedscore',
                  'tipief_63', 'c3_kill', 'orderly_bear', 'permno', 'raw_score')
     if any(term in text for term in forbidden):

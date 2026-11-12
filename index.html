@@ -328,7 +328,7 @@ main>*,.hero>*,.scroll-x,.heat-wrap{min-width:0}
    The narrow breakpoint below switches to equal thirds so it never has to wrap at all. */
 /* .view-tabs shares every base rule so the two strips are visually identical, but is
    deliberately excluded from the narrow-viewport override below: that one hard-codes
-   three equal columns for the three models, which a two-segment content switcher must
+   four equal columns for the four models, which a two-segment content switcher must
    not inherit. The two bars are also scoped differently -- .account-tabs swaps the whole
    snapshot, .view-tabs only swaps which pane of it is on screen. */
 .account-tabs,.view-tabs{
@@ -665,13 +665,21 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}
 }
-.short-badge{display:inline-block;color:var(--amber);background:var(--hover-wash);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:.72rem;font-weight:600}
-.hedged-short{color:var(--amber)}
+.short-badge{display:inline-block;color:var(--red);background:var(--hover-wash);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:.72rem;font-weight:600}
+.hedged-short{color:var(--red)}
 .hedged-table{width:100%;table-layout:fixed}
 .hedged-table th:first-child,.hedged-table td:first-child{width:34%;overflow-wrap:anywhere;white-space:normal}
 .hedged-table td,.hedged-table th{white-space:normal;overflow-wrap:anywhere}
 .hedged-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
-@media(max-width:600px){.hedged-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.hedged-table th,.hedged-table td{padding:10px 4px;font-size:.75rem}}
+@media(max-width:600px){.hedged-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.hedged-summary .stat{padding:16px 12px}.hedged-summary .value{font-size:clamp(1.15rem,5.7vw,2rem)}.hedged-table th,.hedged-table td{padding:10px 4px;font-size:.75rem}}
+.hedged-hero{margin-bottom:18px}
+#h-ret-foot{white-space:pre-line}
+.hedged-regime{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;margin-bottom:12px;background:var(--hover-wash);border:1px solid var(--border);border-radius:12px;color:var(--ink-2);font-size:.8rem}
+.hedged-regime::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.hedged-chart-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hedged-daily{display:flex;gap:10px 24px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:14px;margin-top:14px;font-size:.8rem;color:var(--muted)}
+.hedged-daily strong{color:var(--ink)}
+@media(max-width:720px){.hedged-hero{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.hedged-hero .stat{padding:16px 12px}.hedged-hero .value{font-size:clamp(1.2rem,5.7vw,2rem)}}
 </style>
 </head>
 <body>
@@ -887,7 +895,20 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
   </div><!-- /#view-overview -->
 
   <div id="view-hedged" hidden>
+    <section class="hero hedged-hero" id="hedged-hero" aria-label="Hedged live returns">
+      <div class="card stat"><div class="label">Since Inception Return</div><div class="value num v-blue" id="h-ret">—</div><div class="foot" id="h-ret-foot"></div></div>
+      <div class="card stat"><div class="label">S&amp;P 500 (SPY)</div><div class="value num" id="h-spy">—</div><div class="foot" id="h-spy-foot"></div></div>
+      <div class="card stat"><div class="label">Russell 2000 (IWM)</div><div class="value num" id="h-iwm">—</div><div class="foot" id="h-iwm-foot"></div></div>
+      <div class="card stat"><div class="label">Excess Return vs SPY</div><div class="value num" id="h-alpha">—</div><div class="foot" id="h-alpha-foot"></div></div>
+    </section>
+    <div class="hedged-regime" id="hedged-regime"></div>
     <section class="hedged-summary" id="hedged-summary" aria-label="Hedged account exposures"></section>
+    <section class="card" id="hedged-chart-card">
+      <div class="section-head hedged-chart-head"><div><h2>Live Forward Track vs S&amp;P 500</h2><p id="hedged-chart-sub"></p></div><button type="button" class="btn-ghost" id="hedged-reset">Reset zoom</button></div>
+      <div class="chart-box" style="height:280px"><canvas id="hedged-canvas" role="img" aria-label="Hedged simulated forward NAV versus SPY rebased to inception capital"></canvas></div>
+      <p class="caption">Scroll to zoom · Drag to pan · Double-click to reset</p>
+      <div class="hedged-daily" aria-label="Latest session performance"><strong class="num" id="h-daily">—</strong><span id="h-daily-spy"></span><span id="h-daily-iwm"></span></div>
+    </section>
     <section class="card">
       <div class="section-head"><h2>Experimental Long/Short Portfolio</h2><p id="hedged-asof"></p></div>
       <p class="caption">Simulated institutional forward track. No real capital is deployed. Positions entered within the last 7 calendar days are masked; macro ETFs remain disclosed. Masked shorts show target weight and signed market value. Exposure totals use marked weights.</p>
@@ -1226,6 +1247,7 @@ const glowLine = {
 
 /* ---------- renderers ---------- */
 let equityChart = null;
+let hedgedChart = null;
 let sectorChart = null;
 let SNAP = null;
 
@@ -1628,6 +1650,9 @@ function initEquityControls() {
   const resetZoom = () => { if (equityChart) equityChart.resetZoom(); };
   document.getElementById('equity').addEventListener('dblclick', resetZoom);
   document.getElementById('btn-reset').addEventListener('click', resetZoom);
+  const resetHedged = () => { if (hedgedChart) hedgedChart.resetZoom(); };
+  document.getElementById('hedged-canvas').addEventListener('dblclick', resetHedged);
+  document.getElementById('hedged-reset').addEventListener('click', resetHedged);
 
   const btnLog = document.getElementById('btn-log');
   const btnLin = document.getElementById('btn-lin');
@@ -2065,6 +2090,22 @@ function renderSectorConviction(s) {
 function repaintCharts() {
   const C = themeColors();
   applyDefaults();
+  if (SNAP?.account === 'hedged') {
+    if (hedgedChart) {
+      const o = hedgedChart.options;
+      for (const axis of ['x', 'y']) {
+        o.scales[axis].grid.color = C.grid;
+        o.scales[axis].ticks.color = C.inkMuted;
+      }
+      o.plugins.legend.labels.color = C.ink2;
+      hedgedChart.data.datasets[0].borderColor = C.blue;
+      hedgedChart.data.datasets[0].backgroundColor = C.blue;
+      hedgedChart.data.datasets[1].borderColor = C.bench;
+      hedgedChart.data.datasets[1].backgroundColor = C.bench;
+      hedgedChart.update('none');
+    }
+    return;
+  }
 
   if (equityChart) {
     const o = equityChart.options;
@@ -2167,6 +2208,30 @@ function renderHedged(s) {
   if (s.account !== 'hedged' || s.schema_version !== 'hedged-1.0' || !Array.isArray(s.holdings?.positions)) {
     throw new TypeError('Invalid hedged metadata snapshot');
   }
+  const live = s.live;
+  const windowLabel = `${live.inception_date} to ${live.last_updated}`;
+  const bps = v => `${v >= 0 ? '+' : ''}${Math.round(v * 10000)} bps`;
+  const signedMoney = v => `${v < 0 ? '-' : v > 0 ? '+' : ''}${money2(Math.abs(v))}`;
+  const metric = (id, value, text) => {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.style.color = value >= 0 ? 'var(--green)' : 'var(--red)';
+  };
+  metric('h-ret', live.since_inception_return, signedPct(live.since_inception_return));
+  metric('h-spy', live.benchmark_return, signedPct(live.benchmark_return));
+  metric('h-iwm', live.benchmark_return_iwm, signedPct(live.benchmark_return_iwm));
+  metric('h-alpha', live.excess_return, bps(live.excess_return));
+  document.getElementById('h-ret-foot').textContent = `${money2(live.inception_nav)} → ${money2(live.nav)}\nLive start ${live.inception_date}`;
+  document.getElementById('h-spy-foot').textContent = windowLabel;
+  document.getElementById('h-iwm-foot').textContent = `${windowLabel} · Excess ${bps(live.excess_return_iwm)}`;
+  document.getElementById('h-alpha-foot').textContent = `Cumulative return difference · ${windowLabel}`;
+  document.getElementById('hedged-regime').textContent = `${s.regime.state.replaceAll('_', ' ').toUpperCase()} · ${s.regime.sleeve} sleeve · Signal ${s.regime.signal_as_of}`;
+  document.getElementById('hedged-chart-sub').textContent = `Daily marks from ${windowLabel} · SPY rebased to ${money2(live.inception_nav)} · ${live.days_live} sessions`;
+  const dailyWindow = s.equity_curve.live.length > 1 ? `${s.equity_curve.live.at(-2).d} to ${live.last_updated}` : `Inception ${live.inception_date}`;
+  document.getElementById('h-daily').textContent = `Daily PnL ${signedMoney(live.daily_pnl)} (${signedPct(live.daily_return)}) · ${dailyWindow}`;
+  document.getElementById('h-daily-spy').textContent = `SPY ${signedPct(live.benchmark_daily_return)} · Excess ${bps(live.daily_return - live.benchmark_daily_return)}`;
+  document.getElementById('h-daily-iwm').textContent = `IWM ${signedPct(live.benchmark_daily_return_iwm)} · Excess ${bps(live.daily_return - live.benchmark_daily_return_iwm)}`;
+  renderHedgedChart(s);
   const positions = s.holdings.positions;
   const macro = new Set(['TLT', 'IEF', 'TIP', 'HYG', 'GLD', 'UUP', 'USO', 'DBA', 'SH']);
   const shorts = positions.filter(p => p.side === 'SHORT');
@@ -2183,7 +2248,7 @@ function renderHedged(s) {
   document.getElementById('hedged-asof').textContent = `Marked as of ${s.as_of} · ${longs.length} long equities · ${etfs.length} macro ETFs · ${shorts.length} shorts`;
   document.getElementById('hedged-summary').innerHTML = [
     ['Simulated NAV', money2(s.nav)], ['Gross Exposure', pct(s.gross_exposure)],
-    ['Net Exposure', pct(s.net_exposure)], ['Cash Weight', pct(s.cash_weight)]
+    ['Net Exposure', pct(s.net_exposure)], ['Cash Collateral', pct(s.cash_weight)]
   ].map(([label, value]) => `<div class="card stat"><div class="label">${esc(label)}</div><div class="value num">${esc(value)}</div></div>`).join('');
   const table = rows => `<div class="scroll-x"><table class="hedged-table"><thead><tr><th>Position / Side</th><th>Sector</th><th>Weight</th><th>Market Value</th></tr></thead><tbody>`
     + [...rows].sort((a, b) => a.ticker.localeCompare(b.ticker)).map(p => {
@@ -2192,7 +2257,7 @@ function renderHedged(s) {
       const weight = short && locked ? p.target_weight : p.weight;
       return `<tr><td>${esc(p.ticker)}${short ? ' <span class="short-badge">SHORT</span>' : ''}</td><td>${esc(p.sector)}</td>`
         + `<td class="num${short ? ' hedged-short' : ''}">${pct(weight, 2)}${short && locked ? ' target' : ''}</td>`
-        + `<td class="num${short ? ' hedged-short' : ''}">${money2(p.value)}</td></tr>`;
+        + `<td class="num${short ? ' hedged-short' : ''}">${p.value < 0 ? '-' + money2(-p.value) : money2(p.value)}</td></tr>`;
     }).join('') + '</tbody></table></div>';
   document.getElementById('hedged-holdings').innerHTML =
     `<details><summary>Long Equity Book · ${longs.length} positions <span class="caret">▼</span></summary>${table(longs)}</details>`
@@ -2201,6 +2266,44 @@ function renderHedged(s) {
   document.getElementById('hedged-sectors').innerHTML = '<table><thead><tr><th>Sector</th><th>Net Weight</th></tr></thead><tbody>'
     + Object.entries(s.sector_weights).map(([sector, weight]) => `<tr><td>${esc(sector)}</td><td class="num">${pct(weight)}</td></tr>`).join('')
     + '</tbody></table>';
+}
+
+function renderHedgedChart(s) {
+  if (hedgedChart) hedgedChart.destroy();
+  const C = themeColors();
+  hedgedChart = new Chart(document.getElementById('hedged-canvas'), {
+    type: 'line',
+    data: {
+      labels: s.equity_curve.live.map(p => p.d),
+      datasets: [
+        {label: 'Hedged [Exp]', data: s.equity_curve.live.map(p => p.v), borderColor: C.blue,
+         backgroundColor: C.blue, borderWidth: 2.5, pointRadius: 3, pointHoverRadius: 5, fill: false, tension: .15},
+        {label: 'S&P 500', data: s.equity_curve.spy.map(p => p.v), borderColor: C.bench,
+         backgroundColor: C.bench, borderWidth: 1.5, borderDash: [4, 4], pointRadius: 2, fill: false}
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: {mode: 'index', intersect: false},
+      scales: {
+        x: {type: 'category', grid: {color: C.grid}, ticks: {color: C.inkMuted, maxRotation: 0, maxTicksLimit: 6}},
+        y: {grid: {color: C.grid}, ticks: {color: C.inkMuted, callback: v => money(v)}}
+      },
+      plugins: {
+        legend: {align: 'end', labels: {color: C.ink2, usePointStyle: true, pointStyle: 'line'}},
+        tooltip: {callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${money2(ctx.parsed.y)} (${signedPct(ctx.parsed.y / s.live.inception_nav - 1)})`,
+          afterBody: items => {
+            if (!items.length) return '';
+            const i = items[0].dataIndex;
+            const excess = (s.equity_curve.live[i].v - s.equity_curve.spy[i].v) / s.live.inception_nav;
+            return `Excess vs SPY: ${excess >= 0 ? '+' : ''}${Math.round(excess * 10000)} bps`;
+          }
+        }},
+        zoom: {pan: {enabled: true, mode: 'x'}, zoom: {wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x'}}
+      }
+    }
+  });
 }
 
 const ACCOUNTS = {
@@ -2264,6 +2367,7 @@ function renderAccountTabs(account) {
    over a live instance throws "Canvas is already in use" and leaves the old tooltip and
    hover handlers attached -- which is what ghosts one model's series into the other's. */
 function teardownCharts() {
+  if (hedgedChart) { hedgedChart.destroy(); hedgedChart = null; }
   if (equityChart) { equityChart.destroy(); equityChart = null; }
   if (sectorChart) { sectorChart.destroy(); sectorChart = null; }
 }

@@ -113,7 +113,7 @@ async function harness(search = '', overrides = {}) {
   class Chart {
     static defaults={font:{},animation:{},plugins:{tooltip:{}}};
     constructor(_element,config){this.config=config;this.data=config.data;this.options=config.options;charts.push(this);}
-    update(){} destroy(){} resetZoom(){}
+    update(){} destroy(){this.destroyed=true;} resetZoom(){this.resetCount=(this.resetCount||0)+1;}
   }
   const window={location:{search,pathname:'/momentum-portfolio/'},matchMedia:()=>({matches:false,addEventListener(){}}),addEventListener(){},innerWidth:1280};
   const context=vm.createContext({document,window,Chart,URLSearchParams,Intl,Date,Blob,URL,

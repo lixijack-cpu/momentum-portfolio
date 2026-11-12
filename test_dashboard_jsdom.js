@@ -61,20 +61,39 @@ async function verifyHedged() {
   const w = dom.window, errors = [];
   w.console.error = (...args) => errors.push(args.join(' '));
   w.matchMedia = () => ({matches: false, addEventListener() {}});
-  w.Chart = class { static defaults = {font: {}, animation: {}, plugins: {tooltip: {}}}; };
+  const charts = [];
+  w.Chart = class {
+    static defaults = {font: {}, animation: {}, plugins: {tooltip: {}}};
+    constructor(_el, config) { this.data = config.data; this.options = config.options; charts.push(this); }
+    update() {} destroy() { this.destroyed = true; } resetZoom() { this.reset = true; }
+  };
   w.fetch = async url => ({ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(__dirname, path.basename(url.split('?')[0])), 'utf8'))});
   w.eval(script.replace('\nboot();', '\nwindow.ready = boot();'));
   await w.ready;
   assert.deepEqual(errors, []);
   assert.equal(w.document.getElementById('view-hedged').hidden, false);
   assert.equal(w.document.getElementById('view-overview').hidden, true);
+  const snapshot = JSON.parse(fs.readFileSync(path.join(__dirname, 'institutional_hedged_snapshot.json')));
+  const signed = v => (v >= 0 ? '+' : '') + (100 * v).toFixed(2) + '%';
+  for (const [id, field] of [['h-ret', 'since_inception_return'], ['h-spy', 'benchmark_return'], ['h-iwm', 'benchmark_return_iwm']]) {
+    assert.equal(w.document.getElementById(id).textContent, signed(snapshot.live[field]));
+  }
+  assert.match(w.document.getElementById('h-alpha').textContent, /^[+-]\d+ bps$/);
+  assert.equal(charts.length, 1);
+  assert.equal(charts[0].data.datasets.length, 2);
+  assert.equal(charts[0].data.datasets[0].data.length, snapshot.live.days_live);
+  assert.ok(w.document.getElementById('hedged-canvas'));
+  w.document.getElementById('hedged-reset').click();
+  assert.equal(charts[0].reset, true);
+  w.document.getElementById('theme-toggle').click();
+  assert.deepEqual(errors, []);
   const shorts = w.document.querySelectorAll('.short-badge');
   assert.ok(shorts.length > 0);
   for (const badge of shorts) {
     const row = badge.closest('tr');
     assert.match(row.textContent, /SHORT/);
     assert.match(row.querySelector('td:nth-child(3)').textContent, /-\d/);
-    assert.match(row.querySelector('td:nth-child(4)').textContent, /-\d/);
+    assert.match(row.querySelector('td:nth-child(4)').textContent, /-\$\d/);
   }
   assert.doesNotMatch(w.document.getElementById('view-hedged').textContent, /NaN|undefined|null/);
   dom.window.close();
