@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -789,6 +791,72 @@ def test_signed_positions_require_explicit_short_side():
         pass
     else:
         raise AssertionError('accepted negative values without SHORT side')
+
+
+HEDGED_HISTORY_COLUMNS = ('dates', 'tickers', 'sides', 'shares', 'prices', 'values',
+                          'daily_return_pct', 'daily_pnl', 'status')
+HEDGED_HISTORY_FORBIDDEN = ('FinalScore', 'MLScore', 'SUEScore', 'ValueScore', 'IntegratedScore',
+    'RevMomScore', 'alt_alpha_score', 'ORDERLY_BEAR', 'c3_kill', 'tipief_63', 'PERMNO_',
+    'IBES', 'Compustat', 'WRDS', 'factor beta values', 'regime_multiplier', 'CDaR', 'Ledoit-Wolf')
+
+
+def validate_hedged_history(payload):
+    assert set(payload) == {'schema_version', 'book', 'as_of', 'live_daily'}
+    assert payload['schema_version'] == 'hedged-history-1.0'
+    assert payload['book'] == 'Hedged [Exp] ($10,000 Paper Simulation)'
+    d = payload['live_daily']
+    assert tuple(d) == HEDGED_HISTORY_COLUMNS, 'journal allowlist changed'
+    assert all(isinstance(values, list) for values in d.values())
+    assert len({len(values) for values in d.values()}) == 1
+    assert d['dates'] and d['dates'] == sorted(d['dates'], reverse=True)
+    assert payload['as_of'] == max(d['dates'])
+    encoded = json.dumps(payload, allow_nan=False).casefold()
+    assert not any(term.casefold() in encoded for term in HEDGED_HISTORY_FORBIDDEN)
+    identifying = ('shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl')
+    for i, (stamp, ticker, side, status) in enumerate(zip(d['dates'], d['tickers'], d['sides'], d['status'])):
+        assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', stamp)
+        assert side in ('LONG', 'SHORT') and status in ('IN', 'HOLD', 'OUT')
+        if ticker.startswith('LOCKED-'):
+            assert re.fullmatch(r'LOCKED-(?:SHORT-)?#[1-9][0-9]*', ticker)
+            assert (side == 'SHORT') == ticker.startswith('LOCKED-SHORT-')
+            assert status != 'OUT'
+            assert all(d[column][i] is None for column in identifying), 'locked journal values leaked'
+        else:
+            assert all(isinstance(d[column][i], (int, float)) and math.isfinite(d[column][i]) for column in identifying)
+            assert d['prices'][i] > 0 and d['shares'][i] != 0
+            assert (d['shares'][i] < 0) == (side == 'SHORT')
+            assert math.isclose(d['values'][i], d['shares'][i] * d['prices'][i], abs_tol=1e-8)
+
+
+def test_hedged_history_allowlist_embargo_and_snapshot_identity():
+    payload = json.loads(SNAPSHOT.with_name('hedged_holdings_history.json').read_text())
+    validate_hedged_history(payload)
+    snapshot = hedged_fixture()
+    assert payload['as_of'] == snapshot['as_of']
+    d = payload['live_daily']
+    current = {ticker for stamp, ticker, status in zip(d['dates'], d['tickers'], d['status'])
+               if stamp == payload['as_of'] and status != 'OUT'}
+    assert current == {p['ticker'] for p in snapshot['holdings']['positions']}
+    assert {'UUP', 'GLD', 'SH'} <= set(d['tickers'])
+    assert SNAPSHOT.with_name('institutional_hedged_snapshot.json').stat().st_size < 15000
+
+
+def test_hedged_history_rejects_leaks_nonfinite_and_extra_columns():
+    base = json.loads(SNAPSHOT.with_name('hedged_holdings_history.json').read_text())
+    locked = next(i for i, t in enumerate(base['live_daily']['tickers']) if t.startswith('LOCKED-'))
+    changes = [lambda p, col=col: p['live_daily'][col].__setitem__(locked, 123.45)
+               for col in ('shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl')]
+    changes += [lambda p: p['live_daily'].update(FinalScore=[1] * len(p['live_daily']['dates'])),
+                lambda p: p['live_daily']['prices'].__setitem__(0, float('nan')),
+                lambda p: p['live_daily']['dates'].reverse()]
+    for change in changes:
+        bad = copy.deepcopy(base)
+        change(bad)
+        try:
+            validate_hedged_history(bad)
+        except (AssertionError, ValueError):
+            continue
+        raise AssertionError('accepted a malformed or leaking hedged journal')
 
 
 def main() -> int:

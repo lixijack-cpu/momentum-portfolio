@@ -297,6 +297,58 @@ assert.ok(vm.runInContext('decodedW.rows.every(r => r.cumPnl === null)', history
 
 console.log('ok: Trade Journal leaves cumulative contribution blank when none is published');
 
+const hedgedRows = [
+  ['2026-11-10', 'LONG', 'LONG', 0.82, 100, 82, 0, 0, 'IN'],
+  ['2026-11-11', 'LONG', 'LONG', 0.82, 105, 86.1, 5, 4.1, 'OUT'],
+  ['2026-11-10', 'SHORT', 'SHORT', -4.79, 55, -263.45, 0, 0, 'IN'],
+  ['2026-11-11', 'SHORT', 'SHORT', -4.79, 51.04, -244.4816, 7.2, 18.9684, 'HOLD'],
+  ['2026-11-12', 'SHORT', 'SHORT', -4.79, 50, -239.5, 2.0376, 4.9816, 'OUT'],
+  ['2026-11-13', 'SHORT', 'SHORT', -0.82, 49, -40.18, 0, 0, 'IN'],
+  ['2026-11-14', 'SHORT', 'SHORT', -0.82, 48, -39.36, 2.0408, 0.82, 'OUT'],
+  ['2026-11-12', 'LOCKED-#1', 'LONG', null, null, null, null, null, 'IN'],
+  ['2026-11-12', 'LOCKED-SHORT-#1', 'SHORT', null, null, null, null, null, 'IN'],
+  ['2026-11-10', 'MISSING', 'LONG', 1, 100, 100, 0, 0, 'IN'],
+  ['2026-11-11', 'MISSING', 'LONG', 1, 101, 101, 1, 1, 'HOLD'],
+  ['2026-11-12', 'MISSING', 'LONG', null, null, null, null, null, 'OUT'],
+];
+const hedgedColumns = ['dates', 'tickers', 'sides', 'shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl', 'status'];
+historyContext.hedgedFixture = {live_daily: Object.fromEntries(hedgedColumns.map((c, i) => [c, hedgedRows.map(r => r[i])]))};
+vm.runInContext('const decodedH = decodeHistory(hedgedFixture); historyRows = decodedH.rows; historyRows.isWeight = decodedH.isWeight; renderHistory();', historyContext);
+const hedgedHtml = historyElement('history-body').children.map(row => row.innerHTML).join('\n');
+assert.match(hedgedHtml, /short-badge/);
+assert.match(hedgedHtml, /status-in">SHORT/);
+assert.match(hedgedHtml, /status-out">COVER/);
+assert.match(hedgedHtml, /status-in">BUY/);
+assert.match(hedgedHtml, /status-out">SELL/);
+assert.match(hedgedHtml, />-4\.79</);
+assert.match(hedgedHtml, />0\.82</);
+assert.match(hedgedHtml, /-\$239\.50/);
+assert.doesNotMatch(hedgedHtml, /\$-|NaN|undefined|null/);
+assert.equal(vm.runInContext("histMoney(-244.49)", historyContext), '-$244.49');
+assert.ok(vm.runInContext("decodedH.rows.filter(r => r.ticker.startsWith('LOCKED-')).every(r => r.cumPnl === null && r.pnl === null)", historyContext));
+assert.equal(vm.runInContext("decodedH.rows.find(r => r.ticker === 'MISSING' && r.status === 'OUT').cumPnl", historyContext), null);
+assert.equal(vm.runInContext("decodedH.rows.find(r => r.ticker === 'SHORT' && r.date === '2026-11-13').cumPnl", historyContext), 0);
+assert.equal(vm.runInContext("decodedH.rows.find(r => r.ticker === 'SHORT' && r.date === '2026-11-14').cumPnl", historyContext), 0.82);
+const profitableCover = historyElement('history-body').children.find(r => /2026-11-12/.test(r.innerHTML) && /ticker-cell">SHORT /.test(r.innerHTML));
+assert.match(profitableCover.innerHTML, /edge-pos/);
+assert.match(profitableCover.innerHTML, /\+\$23\.95/);
+historyElement('history-ticker').value = 'COVER';
+vm.runInContext('renderHistory()', historyContext);
+assert.equal(historyElement('history-body').children.length, 2);
+historyElement('history-ticker').value = '';
+// CSV preserves raw signed fractional quantities and null cells, with an explicit side.
+historyContext.Blob = class { constructor(parts) { historyContext.csvText = parts.join(''); } };
+historyContext.URL = {createObjectURL: () => 'blob:test', revokeObjectURL() {}};
+historyContext.resolveAccount = () => 'hedged';
+historyContext.document.body = {appendChild() {}};
+historyContext.document.createElement = () => ({click() {}, remove() {}});
+vm.runInContext(source.slice(source.indexOf('function exportHistoryCsv()'), source.indexOf('\nfunction resolveAssetUrl(')), historyContext);
+vm.runInContext('exportHistoryCsv()', historyContext);
+assert.match(historyContext.csvText, /^Date,Ticker,Side,Status,Action,Shares,Price,Value,DayReturnPct,DayPnL/);
+assert.match(historyContext.csvText, /SHORT,SHORT,OUT,COVER,-4\.79,50,-239\.5/);
+assert.match(historyContext.csvText, /LOCKED-SHORT-#1,SHORT,IN,SHORT,,,,,,0,/);
+console.log('ok: Hedged journal sides, fractional shares, signed values, nulls, spell resets, short profits, filters and CSV');
+
 // Missing, empty and malformed dates hide their labels, including all-empty metadata.
 for (const value of [null, undefined, '', 'null', 'undefined', 'NaN', '2026-99-99']) {
   const empty = structuredClone(shadowFixture);

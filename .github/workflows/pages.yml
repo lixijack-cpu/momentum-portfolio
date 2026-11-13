@@ -51,7 +51,7 @@ jobs:
           mkdir -p _site
           cp index.html favicon.svg og-preview.jpg preview.png \
              portfolio_snapshot.json institutional_snapshot.json shadow_snapshot.json institutional_hedged_snapshot.json \
-             retail_holdings_history.json institutional_holdings_history.json _site/
+             retail_holdings_history.json institutional_holdings_history.json hedged_holdings_history.json _site/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

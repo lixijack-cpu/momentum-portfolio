@@ -13,6 +13,66 @@ const range=(rows,key='d')=>`${rows[0][key]} to ${rows.at(-1)[key]}`;
 const label=account=>account ? 'Live (simulated)' : 'Live (paper account)';
 const includes=(text,expected,where)=>assert.ok(text.includes(expected),`${where}: expected ${JSON.stringify(expected)} in ${JSON.stringify(text)}`);
 
+// Independent reference calculation from published marks; never calls the UI helpers.
+function dailyReference(points) {
+  const returns = points.slice(1).map((p,i)=>p.v/points[i].v-1), n=returns.length;
+  const drawdowns = points.map((p,i)=>p.v/Math.max(...points.slice(0,i+1).map(p=>p.v))-1);
+  const mean=returns.reduce((a,b)=>a+b,0)/n;
+  const vol=n>=15?Math.sqrt(252*returns.reduce((a,r)=>a+(r-mean)**2,0)/(n-1)):null;
+  const downside=n>=15?Math.sqrt(252*returns.reduce((a,r)=>a+Math.min(r,0)**2,0)/n):null;
+  return {n,ret:points.at(-1).v/points[0].v-1,maxDD:Math.min(...drawdowns),vol,
+    sharpe:vol>0?252*mean/vol:null,sortino:downside>0?252*mean/downside:null};
+}
+function referenceSegments(s) {
+  const clean=rows=>[...new Map((rows||[]).filter(p=>p.d<=s.as_of&&![0,6].includes(new Date(p.d+'T00:00:00Z').getUTCDay()))
+    .map(p=>[p.d,{...p}])).values()].sort((a,b)=>a.d.localeCompare(b.d));
+  const live=clean(s.equity_curve.live).filter(p=>p.d>=s.live.inception_date).map(p=>({...p,v:p.v/(Number(s.live.rebase_factor)||1)}));
+  if(Math.abs(live[0].v/s.live.inception_nav-1)>1e-4)live.unshift({d:s.live.inception_date,v:s.live.inception_nav});
+  return {backtest:clean(s.equity_curve.backtest),simulation:clean(s.equity_curve.simulation),live};
+}
+function verifyRisk(h,s) {
+  const segments=referenceSegments(s), live=dailyReference(segments.live);
+  const ratio=v=>v==null?'—':v.toFixed(2), percent=v=>v==null?'—':pct(v);
+  const actual=h.run('RiskMetrics.getPerformanceMetrics(SNAP)');
+  const near=(got,want,label)=>want==null?assert.equal(got,null,label):assert.ok(Math.abs(got-want)<1e-10,`${label}: ${got} vs ${want}`);
+  for(const k of ['n','ret','maxDD','vol','sharpe','sortino'])near(actual.live[k],live[k],'live '+k);
+  const rows=h.document.getElementById('quarterly-body').querySelectorAll('tr');
+  assert.equal(rows.length,8);
+  for(let i=0;i<8;i++) {
+    const date=new Date(s.as_of+'T00:00:00Z');date.setUTCDate(1);date.setUTCMonth(Math.floor(date.getUTCMonth()/3)*3-i*3);
+    const start=date.toISOString().slice(0,10), year=date.getUTCFullYear(), month=date.getUTCMonth();
+    const end=new Date(Date.UTC(year,month+3,0)).toISOString().slice(0,10);
+    const windows=Object.entries(segments).map(([basis,p])=>{
+      const inside=p.filter(p=>p.d>=start&&p.d<=end), anchor=p.filter(p=>p.d<start).at(-1);
+      return {basis,points:anchor?[anchor,...inside]:inside,partial:!anchor,inside:inside.length};
+    }).filter(w=>w.inside&&w.points.length>1);
+    const w=windows.at(-1), expected=dailyReference(w.points), m=actual.quarters[i];
+    const months=s.monthly_returns.filter(r=>r.month>=start.slice(0,7)&&r.month<=end.slice(0,7)&&r.month<=s.as_of.slice(0,7));
+    const ret=months.reduce((v,r)=>v*(1+r.strategy),1)-1, spy=months.reduce((v,r)=>v*(1+r.spy),1)-1;
+    assert.equal(m.basis,w.basis);assert.equal(m.partial,w.partial);
+    assert.equal(m.start,w.points[0].d);assert.equal(m.end,w.points.at(-1).d);
+    for(const k of ['n','maxDD','vol','sharpe','sortino'])near(m[k],expected[k],m.key+' '+k);
+    near(m.ret,ret,m.key+' return');near(m.spy,spy,m.key+' SPY');
+    const cells=rows[i].querySelectorAll('td');
+    assert.deepEqual(cells.slice(2).map(c=>c.textContent),[signed(ret),signed(spy),ratio(expected.sharpe),ratio(expected.sortino),percent(expected.vol),pct(expected.maxDD)]);
+    includes(cells[1].textContent,w.points[0].d,'quarter daily start');
+    includes(cells[1].textContent,w.points.at(-1).d,'quarter daily end');
+    if(w.partial)includes(cells[1].textContent,'partial live','partial daily coverage');
+  }
+  const q=actual.current, strip=h.text('live-quarterly-strip');
+  for(const value of [q.label,signed(q.ret),signed(q.spy),ratio(q.sharpe),pct(q.maxDD),ratio(live.sharpe),ratio(live.sortino),percent(live.vol),pct(live.maxDD)])includes(strip,value,'risk strip');
+  assert.equal(h.document.getElementById('live-quarterly-strip').parentNode,h.document.getElementById('livestats').parentNode);
+  for(const id of ['live-quarterly-strip','quarterly-body','hero-live-quarterly'])assert.doesNotMatch(h.text(id),/NaN|null|undefined|Annualised|realised/i);
+  // Current snapshot sanity values are a second oracle, beyond reference formulas.
+  const account=h.run('CFG.label').toLowerCase();
+  if(s.as_of==='2026-11-13'&&s.live.inception_date===(account==='retail'?'2026-07-27':'2026-07-24')) {
+    const golden={retail:['+2.66%','1.32','1.64','19.27%','-5.87%','+30.25%','5.71','-2.56%'],
+      institutional:['+3.71%','2.23','3.34','13.27%','-3.42%','+18.09%','5.03','-2.43%'],
+      shadow:['+2.15%','1.23','1.64','14.52%','-4.77%','+13.74%','5.09','-1.81%']}[account];
+    if(golden)assert.deepEqual([signed(q.ret),q.sharpe.toFixed(2),q.sortino.toFixed(2),pct(q.vol),pct(q.maxDD),signed(actual.quarters[2].ret),actual.quarters[2].sharpe.toFixed(2),pct(actual.quarters[2].maxDD)],golden);
+  }
+}
+
 function inspectStrings(h) {
   // Static HTML whitespace collapses in a browser. Direct text writes and tooltip/
   // accessibility strings are checked before normalization, so doubled spaces fail.
@@ -40,6 +100,7 @@ async function verify(h,account,s) {
   assert.equal(live.days_live,s.equity_curve.live.length,'session count must count published daily marks');
   if(sim) assert.doesNotMatch(normalize(h.document.body.textContent), /buy-and-hold/i);
   assert.equal(h.run('CFG.label'),name);
+  verifyRisk(h,s);
   includes(h.text('model-description'),`${n} ${sim?'model target names':'paper-account holdings'}`,'model count');
   includes(h.text('about-book'),`${n} ${sim?'model target names':'paper-account holdings'}`,'about count');
   const tab=h.document.querySelectorAll('#account-tabs .tab').find(t=>t.dataset.account===account);
@@ -58,6 +119,7 @@ async function verify(h,account,s) {
   if(sim) includes(h.text('rebase-note'),dollars(live.inception_nav*scale),'display notional');
 
   h.run("swapHeroCards('backtest')");
+  assert.equal(h.document.getElementById('hero-live-quarterly').hidden,true);
   assert.equal(h.text('k-cagr'),pct(head.cagr));
   assert.equal(h.text('k-sharpe'),head.sharpe.toFixed(3));
   assert.equal(h.text('k-dd'),pct(head.max_drawdown,1));
@@ -68,6 +130,7 @@ async function verify(h,account,s) {
   includes(h.text('k-edge-foot'),pct(head.benchmark_max_drawdown,1)+' (daily marks)','benchmark drawdown');
   includes(h.text('k-edge'),String(head.excess_vs_spy_bps),'historical excess');
   h.run("swapHeroCards('live')");
+  assert.equal(h.document.getElementById('hero-live-quarterly').hidden,false);
   if(live.benchmark_return!=null) {
     assert.equal(h.text('k-cagr'),signed(live.since_inception_return));
     assert.equal(h.text('k-sharpe'),signed(live.benchmark_return));
