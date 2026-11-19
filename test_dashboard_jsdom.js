@@ -62,7 +62,7 @@ async function verify(account, missingDates) {
   console.log(`PASS jsdom: ${account || 'retail'}; ${missingDates ? 'missing dates hidden' : 'real snapshot'}; no null/NaN/undefined; benchmark windows`);
 }
 
-async function verifyHedged() {
+async function verifyHedged(syntheticEmbargo = false) {
   const dom = new JSDOM(source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, ''), {
     url: 'https://dashboard.invalid/?account=hedged', runScripts: 'outside-only'
   });
@@ -75,7 +75,20 @@ async function verifyHedged() {
     constructor(_el, config) { this.data = config.data; this.options = config.options; charts.push(this); }
     update() {} destroy() { this.destroyed = true; } resetZoom() { this.reset = true; }
   };
-  w.fetch = async url => ({ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(__dirname, path.basename(url.split('?')[0])), 'utf8'))});
+  w.fetch = async url => {
+    const name = path.basename(url.split('?')[0]);
+    const payload = JSON.parse(fs.readFileSync(path.join(__dirname, name), 'utf8'));
+    if (syntheticEmbargo && name === 'hedged_holdings_history.json') {
+      // Keep masking covered even when every live position has cleared its embargo.
+      const columns = ['dates', 'tickers', 'sides', 'shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl', 'status'];
+      const lockedRows = [
+        [payload.as_of, 'LOCKED-#1', 'LONG', null, null, null, null, null, 'IN'],
+        [payload.as_of, 'LOCKED-SHORT-#1', 'SHORT', null, null, null, null, null, 'IN'],
+      ];
+      columns.forEach((column, i) => payload.live_daily[column].unshift(...lockedRows.map(row => row[i])));
+    }
+    return {ok: true, json: async () => payload};
+  };
   w.eval(script.replace('\nboot();', '\nwindow.dashboardTest = {metrics: RiskMetrics, renderRisk: renderRiskMetrics}; window.ready = boot();'));
   await w.ready;
   assert.deepEqual(errors, []);
@@ -153,6 +166,8 @@ async function verifyHedged() {
   assert.equal(w.document.getElementById('view-tabs').hidden, false);
   assert.equal(w.document.getElementById('view-journal').hidden, false);
   assert.equal(w.document.getElementById('view-hedged').hidden, true);
+  const more = w.document.getElementById('history-more');
+  if (!more.hidden) more.click();
   const journal = w.document.getElementById('history-body');
   assert.ok(journal.children.length > 0);
   assert.doesNotMatch(journal.textContent, /NaN|undefined|null/);
@@ -161,17 +176,27 @@ async function verifyHedged() {
     assert.ok(row, `Macro ETF ${ticker} is disclosed`);
     assert.match(row.textContent, /BUY/);
   }
-  for (const lock of ['LOCKED-#1', 'LOCKED-SHORT-#1']) {
-    const row = [...journal.children].find(r => r.querySelector('.ticker-cell').textContent.startsWith(lock));
-    assert.ok(row, `${lock} appears in journal`);
-    for (const index of [3, 4, 5, 6, 7, 9]) assert.equal(row.children[index].textContent, '—');
+  for (const row of journal.children) {
+    assert.doesNotMatch(row.textContent, /NaN|undefined|null/);
+    const ticker = row.querySelector('.ticker-cell').firstChild.textContent.trim();
+    if (ticker.startsWith('LOCKED-')) {
+      for (const index of [3, 4, 5, 6, 7, 9]) assert.equal(row.children[index].textContent, '—', `${ticker} column ${index}`);
+      assert.equal(row.querySelector('.short-badge')?.textContent, ticker.startsWith('LOCKED-SHORT-') ? 'SHORT' : undefined);
+    }
+  }
+  if (syntheticEmbargo) {
+    for (const ticker of ['LOCKED-#1', 'LOCKED-SHORT-#1']) {
+      const row = [...journal.children].find(r => r.querySelector('.ticker-cell').firstChild.textContent.trim() === ticker);
+      assert.ok(row, `${ticker} appears in synthetic embargo journal`);
+      assert.equal(row.children[2].textContent, ticker === 'LOCKED-SHORT-#1' ? 'SHORT' : 'BUY');
+    }
   }
   w.document.querySelector('[data-view="overview"]').click();
   assert.equal(w.document.getElementById('view-hedged').hidden, false);
   assert.equal(w.document.getElementById('view-journal').hidden, true);
   assert.deepEqual(errors, []);
   dom.window.close();
-  console.log('PASS jsdom: hedged overview and journal, macro disclosure, masked values, SHORT badges');
+  console.log(`PASS jsdom: hedged overview and journal, macro disclosure, masked values, SHORT badges; ${syntheticEmbargo ? 'synthetic LONG/SHORT embargo' : 'real history'}`);
 }
 
 function verifyMetricEdges(api, snapshot) {
@@ -229,6 +254,7 @@ function verifyMetricEdges(api, snapshot) {
 
 (async () => {
   await verifyHedged();
+  await verifyHedged(true);
   for (const account of Object.keys(files)) {
     await verify(account, false);
     await verify(account, true);

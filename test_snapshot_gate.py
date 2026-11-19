@@ -843,20 +843,40 @@ def test_hedged_history_allowlist_embargo_and_snapshot_identity():
 
 def test_hedged_history_rejects_leaks_nonfinite_and_extra_columns():
     base = json.loads(SNAPSHOT.with_name('hedged_holdings_history.json').read_text())
-    locked = next(i for i, t in enumerate(base['live_daily']['tickers']) if t.startswith('LOCKED-'))
-    changes = [lambda p, col=col: p['live_daily'][col].__setitem__(locked, 123.45)
-               for col in ('shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl')]
-    changes += [lambda p: p['live_daily'].update(FinalScore=[1] * len(p['live_daily']['dates'])),
-                lambda p: p['live_daily']['prices'].__setitem__(0, float('nan')),
-                lambda p: p['live_daily']['dates'].reverse()]
-    for change in changes:
-        bad = copy.deepcopy(base)
+    validate_hedged_history(base)
+
+    # The live book can have no embargoed rows once every entry is seven days old.
+    # Prepend both sides on a copy so rejection coverage never depends on live trades.
+    masked = copy.deepcopy(base)
+    changes = []
+    for i, (ticker, side) in enumerate((('LOCKED-#1', 'LONG'), ('LOCKED-SHORT-#1', 'SHORT'))):
+        row = dict.fromkeys(HEDGED_HISTORY_COLUMNS)
+        row.update(dates=base['as_of'], tickers=ticker, sides=side, status='IN')
+        for column, value in row.items():
+            masked['live_daily'][column].insert(i, value)
+        changes += [(f'{ticker} leaks {col}',
+                     lambda p, col=col, i=i: p['live_daily'][col].__setitem__(i, 123.45))
+                    for col in ('shares', 'prices', 'values', 'daily_return_pct', 'daily_pnl')]
+        wrong_side = 'SHORT' if side == 'LONG' else 'LONG'
+        changes += [(f'{ticker} has wrong side',
+                     lambda p, i=i, side=wrong_side: p['live_daily']['sides'].__setitem__(i, side)),
+                    (f'{ticker} has OUT status',
+                     lambda p, i=i: p['live_daily']['status'].__setitem__(i, 'OUT'))]
+    validate_hedged_history(masked)
+
+    changes += [(f'extra {col} column',
+                 lambda p, col=col: p['live_daily'].update({col: [1] * len(p['live_daily']['dates'])}))
+                for col in ('FinalScore', 'MLScore')]
+    changes += [('nonfinite price', lambda p: p['live_daily']['prices'].__setitem__(2, float('nan'))),
+                ('reversed dates', lambda p: p['live_daily']['dates'].reverse())]
+    for description, change in changes:
+        bad = copy.deepcopy(masked)
         change(bad)
         try:
             validate_hedged_history(bad)
         except (AssertionError, ValueError):
             continue
-        raise AssertionError('accepted a malformed or leaking hedged journal')
+        raise AssertionError(f'accepted a malformed or leaking hedged journal: {description}')
 
 
 def main() -> int:

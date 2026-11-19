@@ -4,6 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {harness} = require('./test_dashboard_dom');
 
+function verifyShortWeights(h, snapshot) {
+  const rows = h.document.getElementById('hedged-holdings').querySelectorAll('tbody tr');
+  for (const p of snapshot.holdings.positions.filter(p => p.side === 'SHORT')) {
+    const row = rows.find(row => row.querySelector('td').textContent === `${p.ticker} SHORT`);
+    assert.ok(row, `${p.ticker} short holding is rendered`);
+    assert.equal(row.querySelector('.short-badge').textContent, 'SHORT');
+    const locked = /^LOCKED-SHORT-#[1-9][0-9]*$/.test(p.ticker);
+    const weight = locked ? p.target_weight : p.weight;
+    assert.equal(row.querySelectorAll('td')[2].textContent,
+      (weight * 100).toFixed(2) + '%' + (locked ? ' target' : ''), p.ticker);
+    assert.ok(p.value < 0);
+  }
+}
+
 (async () => {
   const snapshot = JSON.parse(fs.readFileSync(path.join(__dirname, 'institutional_hedged_snapshot.json')));
   const h = await harness('?account=hedged');
@@ -48,13 +62,20 @@ const {harness} = require('./test_dashboard_dom');
   assert.match(rendered, /Long Equity Book.*Macro ETF Sleeve.*Short Overlay/);
   for (const p of snapshot.holdings.positions) {
     assert.ok(rendered.includes(p.ticker), p.ticker);
-    if (p.side === 'SHORT') {
-      assert.ok(rendered.includes('SHORT'));
-      assert.ok(rendered.includes((p.target_weight * 100).toFixed(2) + '% target'));
-      assert.ok(p.value < 0);
-    }
   }
+  verifyShortWeights(h, snapshot);
   assert.doesNotMatch(rendered, /NaN|undefined|null/);
+  // Locked shorts show target weights; disclosed shorts show marked weights.
+  // A synthetic locked short keeps the target branch tested after all live locks expire.
+  const masked = structuredClone(snapshot);
+  const maskedShort = masked.holdings.positions.find(p => p.ticker === 'LOCKED-SHORT-#1')
+    || masked.holdings.positions.find(p => p.side === 'SHORT');
+  maskedShort.ticker = 'LOCKED-SHORT-#1';
+  maskedShort.target_weight = maskedShort.weight / 2;
+  const maskedHarness = await harness('?account=hedged', {'institutional_hedged_snapshot.json': masked});
+  verifyShortWeights(maskedHarness, masked);
+  assert.doesNotMatch(maskedHarness.text('hedged-holdings'), /NaN|undefined|null/);
+  assert.equal(maskedHarness.errors.length, 0);
   // Both the canonical account and its existing alias support journal deep links.
   const alias = await harness('?account=institutional_hedged&view=journal');
   assert.equal(alias.document.getElementById('view-hedged').hidden, true);
