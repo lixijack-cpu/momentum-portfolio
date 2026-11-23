@@ -112,7 +112,7 @@ async function harness(search = '', overrides = {}) {
   const {document,writes}=createDocument(source); const charts=[]; const errors=[];
   class Chart {
     static defaults={font:{},animation:{},plugins:{tooltip:{}}};
-    constructor(_element,config){this.config=config;this.data=config.data;this.options=config.options;charts.push(this);}
+    constructor(_element,config){this.element=_element;this.config=config;this.data=config.data;this.options=config.options;charts.push(this);}
     update(){} destroy(){this.destroyed=true;} resetZoom(){this.resetCount=(this.resetCount||0)+1;}
   }
   const window={location:{search,pathname:'/momentum-portfolio/'},matchMedia:()=>({matches:false,addEventListener(){}}),addEventListener(){},innerWidth:1280};

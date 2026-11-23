@@ -496,6 +496,8 @@ select.field{cursor:pointer;padding-right:10px}
 }
 .heat-cell.spy-cell{height:16px;font-size:.55rem;opacity:0.75;margin-bottom:6px;border-radius:2px;}
 .heat-cell.empty{background:transparent !important;outline:none;}
+/* Partial calendar months (live start, latest mark): a marker only, the value text is unchanged. */
+.heat-cell.partial::after{content:'*';font-size:.6rem;margin-left:1px;opacity:.8}
 .heat-cell:hover:not(.empty){transform:scale(1.13);outline-color:var(--border-strong);position:relative;z-index:3;opacity:1}
 .scale-legend{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:.74rem;color:var(--muted)}
 .scale-bar{width:150px;height:9px;border-radius:5px;
@@ -873,7 +875,7 @@ footer p{color:var(--muted);font-size:.74rem;max-width:72ch;line-height:1.65}
     <div class="section-head">
       <h2>Monthly Performance — Portfolio vs S&amp;P 500</h2>
       <p id="heat-sub"></p>
-      <p class="caption" id="heat-dd-note">Each cell is a single month and each Year cell is one calendar year. A drawdown that spans several months compounds across consecutive cells and can cross a year boundary, so no single cell shows its full depth. For example, the 2008-06 to 2009-02 decline compounds across nine monthly cells and two calendar years; its full depth is the month-end drawdown in the stress table above, while the 2008 Year cell is shallower because gains earlier in 2008 offset part of it.</p>
+      <p class="caption" id="heat-dd-note">Each cell is a single month and each Year cell compounds one calendar year (2026 is shown as separate simulation and live rows). A drawdown that spans several months compounds across consecutive cells and can cross a year boundary, so no single cell shows its full depth. For example, the 2008-06 to 2009-02 decline compounds across nine monthly cells and two calendar years; its full depth is the month-end drawdown in the stress table above, while the 2008 Year cell is shallower because gains earlier in 2008 offset part of it.</p>
     </div>
     <div class="heat-wrap">
       <div class="scroll-x"><div id="heat-grid"></div></div>
@@ -1458,7 +1460,10 @@ function renderBookCopy(s) {
   const n = positions.length;
   const sim = simulatedBook();
   const accountText = sim
-    ? `${CFG.label}: ${n} model target names. ${CFG.description} Simulated $10,000 account marked to adjusted closes. Holdings are reset at each model rebalance; history before each rebalance is frozen and never restated.`
+    ? `${CFG.label}: ${n} model target names. ${CFG.description} Simulated $10,000 account marked to adjusted closes. `
+      + (CFG.fixedTargetSignal && s.holdings.last_rebalance && s.holdings.last_rebalance <= s.live.inception_date
+        ? `The target basket is fixed from the ${CFG.fixedTargetSignal} model signal and has not been rebalanced since live start (${s.holdings.last_rebalance}); weights drift with prices.`
+        : 'Holdings are reset at each model rebalance; history before each rebalance is frozen and never restated.')
     : `${CFG.label}: ${n} paper-account holdings with integer-share sizing. The paper account was funded with ${money(s.live.inception_nav)} at live start ${s.live.inception_date}.`;
   document.getElementById('model-description').textContent = accountText;
   document.getElementById('about-book').textContent = accountText;
@@ -1517,6 +1522,9 @@ function swapHeroCards(view) {
   if (!s) return;
   if (view === 'live' && !hasLiveBenchmark(s)) view = 'backtest';
   HERO_VIEW = view;
+  // The main chart follows the selector: Live Track plots the unrebased live window
+  // against the live-window S&P 500; Historical Stats keeps the 2005-live curve.
+  if (equityChart && equityChart.$mode !== equityMode(s)) renderEquity(s);
   document.getElementById('hero-live-quarterly').hidden = view !== 'live';
 
   document.getElementById('sel-backtest')
@@ -1686,78 +1694,105 @@ function renderRegimeBanner(snap) {
   banner.title = `Macro regime signal: ${$('rb-state').textContent}. ${exposure} Macro signal tickers are research signals and are not holdings unless listed in the account.`;
 }
 
+/* The published benchmark for the live window, normalised to the live start. Older
+   snapshots predate it; a missing or malformed series returns [] and the live chart
+   says so instead of borrowing the historical SPY curve, which ends at the close of the
+   2026 simulation and would bridge the uncovered sessions before live start. */
+function spyLiveSeries(s) {
+  const pts = s.equity_curve && s.equity_curve.spy_live;
+  if (!Array.isArray(pts)) return [];
+  const asOf = s.live && s.live.last_updated;
+  const ok = p => p && typeof p.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.d)
+    && typeof p.v === 'number' && Number.isFinite(p.v) && p.v > 0 && (!asOf || p.d <= asOf);
+  return pts.every(ok) ? pts.slice() : [];
+}
+
+const equityMode = s => (HERO_VIEW === 'live' && hasLiveBenchmark(s) ? 'live' : 'backtest');
+const equityYType = () =>
+  document.getElementById('btn-lin').getAttribute('aria-pressed') === 'true' ? 'linear' : 'logarithmic';
+
 function renderEquity(s) {
+  if (equityChart) { equityChart.destroy(); equityChart = null; }
+  const mode = equityMode(s);
   const scale = CFG.scale;
   const C = themeColors();
   // Every series goes through this one mapper, so the vs-SPY tooltip below stays a
   // ratio of two equally scaled numbers. Scaling only one of them would corrupt it.
-  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale}));
+  const toXY = arr => arr.map(p => ({x: new Date(p.d + 'T00:00:00Z').getTime(), y: p.v * scale,
+    ...(p.syntheticAnchor ? {syntheticAnchor: true} : {})}));
   const ec = s.equity_curve;
 
-  document.getElementById('curve-title').textContent = 'Growth of ' + money(s.live.inception_nav * scale);
   if (scale !== 1) {
     const badge = document.getElementById('scale-badge');
     badge.textContent = `Simulated · ${scale}× scale`;
     badge.hidden = false;
   }
 
-  const spy = toXY(ec.spy);
-  const spyAt = new Map(spy.map(p => [p.x, p.y]));
-
-  const datasets = [
-    {
-      label: 'S&P 500',
-      data: spy,
-      borderColor: C.bench,
-      backgroundColor: C.benchFill,
-      borderWidth: 1,
-      fill: 'origin',
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 4
-    },
-    {
-      label: 'Walk-forward backtest',
-      data: toXY(ec.backtest),
-      borderColor: C.grey,
-      borderWidth: 1.6,
-      borderDash: [5, 5],
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 3
-    },
-    {
-      label: '2026 simulation',
-      data: toXY(ec.simulation),
-      borderColor: C.amber,
-      borderWidth: 2,
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      order: 2
-    },
-    {
-      label: liveLabel(),
-      data: toXY(ec.live),
-      borderColor: C.blue,
-      borderWidth: 2.5,
-      fill: false,
-      pointRadius: 0,
-      pointHitRadius: 0,
-      glow: true,
-      order: 1
+  let datasets, events, spy, benchLabel;
+  if (mode === 'live') {
+    /* Unrebased, true-notional account series: getLiveSeries divides the rebase back out
+       and, for the funded account, restores the deposit as the opening point, so the
+       opening-day move and the since-inception return read exactly as the hero cards. */
+    const live = toXY(RiskMetrics.getLiveSeries(s));
+    spy = toXY(spyLiveSeries(s));
+    benchLabel = 'S&P 500 (Live)';
+    datasets = [];
+    if (spy.length) datasets.push({
+      label: benchLabel, role: 'bench', data: spy, borderColor: C.bench, backgroundColor: C.benchFill,
+      borderWidth: 1.4, fill: false, pointRadius: 0, pointHitRadius: 0, order: 2
+    });
+    datasets.push({
+      label: liveLabel(), role: 'live', data: live, borderColor: C.blue, borderWidth: 2.5,
+      fill: false, pointRadius: 0, pointHitRadius: 0, glow: true, order: 1
+    });
+    events = [{date: s.live.inception_date, label: simulatedBook() ? 'Live start (simulated)' : 'Live start (paper account)', color: C.blue}];
+    document.getElementById('curve-title').textContent =
+      `Growth of ${money(s.live.inception_nav * scale)} since ${s.live.inception_date}`;
+    document.getElementById('curve-sub').textContent =
+      `${liveLabel()}: ${rangeOf(RiskMetrics.getLiveSeries(s).filter(p => !p.syntheticAnchor))}, account NAV without the chart rebase. `
+      + (spy.length
+        ? `S&P 500 (Live): ${rangeOf(spyLiveSeries(s))}, SPY dividend-adjusted closes rebased to ${money(s.live.inception_nav * scale)} on the first live session; same window as the S&P 500 card.`
+        : 'S&P 500 live series not in this snapshot; the benchmark return is shown on the S&P 500 card.');
+    document.getElementById('rebase-note').textContent =
+      (simulatedBook()
+        ? `Unrebased live track: simulated starting NAV ${money(s.live.inception_nav)}, displayed at ${money(s.live.inception_nav * scale)} notional (${scale}×). `
+        : `Unrebased live track: the paper account was funded with ${money(s.live.inception_nav)}, plotted from the deposit so the opening-day move is visible. `)
+      + 'Switch to Historical Stats for the rebased 2005–live curve.';
+  } else {
+    spy = toXY(ec.spy);
+    benchLabel = 'S&P 500';
+    datasets = [
+      {label: benchLabel, role: 'bench', data: spy, borderColor: C.bench, backgroundColor: C.benchFill,
+        borderWidth: 1, fill: 'origin', pointRadius: 0, pointHitRadius: 0, order: 4},
+      {label: 'Walk-forward backtest', role: 'backtest', data: toXY(ec.backtest), borderColor: C.grey,
+        borderWidth: 1.6, borderDash: [5, 5], fill: false, pointRadius: 0, pointHitRadius: 0, order: 3},
+      {label: '2026 simulation', role: 'simulation', data: toXY(ec.simulation), borderColor: C.amber,
+        borderWidth: 2, fill: false, pointRadius: 0, pointHitRadius: 0, order: 2},
+      {label: liveLabel(), role: 'live', data: toXY(ec.live), borderColor: C.blue,
+        borderWidth: 2.5, fill: false, pointRadius: 0, pointHitRadius: 0, glow: true, order: 1}
+    ];
+    events = [
+      {date: '2007-10-01', label: 'GFC reference', color: '#ef4444'},
+      {date: '2020-02-19', label: 'COVID', color: '#ef4444'},
+      {date: '2022-01-03', label: '2022 bear market', color: '#f97316'}
+    ];
+    if (s.live && s.live.inception_date) {
+      events.push({date: s.live.inception_date, label: simulatedBook() ? 'Live start (simulated)' : 'Live start (paper account)', color: C.blue});
     }
-  ];
-
-  const events = [
-    {date: '2007-10-01', label: 'GFC reference', color: '#ef4444'},
-    {date: '2020-02-19', label: 'COVID', color: '#ef4444'},
-    {date: '2022-01-03', label: '2022 bear market', color: '#f97316'}
-  ];
-  if (s.live && s.live.inception_date) {
-    events.push({date: s.live.inception_date, label: simulatedBook() ? 'Live start (simulated)' : 'Live start (paper account)', color: C.blue});
+    document.getElementById('curve-title').textContent = 'Growth of ' + money(s.live.inception_nav * scale);
+    document.getElementById('curve-sub').textContent =
+      `Walk-forward backtest chart: ${rangeOf(ec.backtest)} (includes baseline; strategy start ${s.headline.window_start}). `
+      + `2026 simulation chart: ${rangeOf(ec.simulation)} (includes baseline). `
+      + `${liveLabel()}: ${rangeOf(ec.live)}.`;
+    document.getElementById('rebase-note').textContent = s.live && s.live.rebase_factor > 1
+      ? `The ${liveLabel()} curve is rebased to continue the historical simulation on one axis. `
+        + (simulatedBook()
+          ? `The simulated starting NAV is ${money(s.live.inception_nav)}, displayed at ${money(s.live.inception_nav * scale)} notional (${scale}×). `
+          : `The paper account was funded with ${money(s.live.inception_nav)}. `)
+        + 'The header and holdings statistics show account NAV without the chart rebase. Select Live Track for the unrebased live curve against the S&P 500.'
+      : (NOTE_DEFAULTS.get('rebase-note') || '');
   }
+  const spyAt = new Map(spy.map(p => [p.x, p.y]));
 
   equityChart = new Chart(document.getElementById('equity'), {
     type: 'line',
@@ -1766,12 +1801,14 @@ function renderEquity(s) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {mode: 'index', intersect: false, axis: 'x'},
+      // 'nearest' along x returns every series at the hovered session; the live view's
+      // series differ in length (the deposit anchor), so same-index pairing would not.
+      interaction: mode === 'live' ? {mode: 'nearest', intersect: false, axis: 'x'} : {mode: 'index', intersect: false, axis: 'x'},
       layout: {padding: {top: 26}},
       scales: {
         x: {
           type: 'time',
-          time: {unit: 'year', tooltipFormat: 'dd MMM yyyy'},
+          time: {unit: mode === 'live' ? 'month' : 'year', tooltipFormat: 'dd MMM yyyy'},
           grid: {color: C.grid, drawTicks: false},
           border: {color: C.axisBorder},
           ticks: {maxRotation: 0, autoSkipPadding: 22}
@@ -1780,7 +1817,7 @@ function renderEquity(s) {
         // what keeps the 2009 trough and the 2021 peak on the canvas; a hardcoded bound
         // would silently clip whichever extreme moved past it as the history grows.
         y: {
-          type: 'logarithmic',
+          type: equityYType(),
           grid: {color: C.grid, drawTicks: false},
           border: {display: false},
           ticks: {callback: v => moneyTick(v)}
@@ -1796,43 +1833,40 @@ function renderEquity(s) {
         tooltip: {
           callbacks: {
             label(ctx) {
-              return `${ctx.dataset.label}: ${money(ctx.parsed.y)}`;
+              const anchor = ctx.raw && ctx.raw.syntheticAnchor ? ' (opening deposit)' : '';
+              return `${ctx.dataset.label}${anchor}: ${money(ctx.parsed.y)}`;
             },
-            /* The benchmark series is published only as far as the last marked month, so
-               it runs out before the live curve does. Returning '' for that case made the
-               comparison line vanish across the whole live window with no explanation,
-               which reads as a broken tooltip rather than as missing data. Say which it
-               is; do not carry the last SPY level forward, because a flat benchmark over
-               the gap is an invented number, not a conservative one. */
+            /* The historical benchmark series is published only through the end of the
+               2026 simulation, so it runs out before the live curve does. Say so rather
+               than returning '' (which reads as a broken tooltip), and never carry the
+               last SPY level forward: a flat benchmark over the gap is an invented number.
+               The live view compares against the live-window SPY series instead. */
             afterBody(items) {
               if (!items.length) return '';
-              const port = items.find(i => i.dataset.label !== 'S&P 500');
+              const port = items.find(i => i.dataset.role !== 'bench' && i.dataset.label !== benchLabel);
               if (!port) return '';
-              const bench = spyAt.get(items[0].parsed.x);
-              if (bench == null) return 'S&P 500 comparison unavailable for this date';
+              if (port.raw && port.raw.syntheticAnchor) return '';
+              const bench = spyAt.get(port.parsed.x);
+              if (bench == null) {
+                return mode === 'live'
+                  ? 'S&P 500 comparison unavailable for this date'
+                  : 'S&P 500 comparison unavailable for this date; select Live Track for the live-window benchmark';
+              }
               const rel = port.parsed.y / bench - 1;
-              return `Relative curve value vs S&P 500: ${signedPct(rel, 1)}`;
+              return `Relative curve value vs ${benchLabel}: ${signedPct(rel, 1)}`;
             }
           }
         },
         zoom: {
           pan: {enabled: true, mode: 'x', modifierKey: null},
           zoom: {wheel: {enabled: true}, pinch: {enabled: true}, mode: 'x'},
-          limits: {x: {minRange: 1000 * 60 * 60 * 24 * 30}}
+          limits: {x: {minRange: 1000 * 60 * 60 * 24 * (mode === 'live' ? 5 : 30)}}
         }
       },
       onDoubleClick: null
     }
   });
-
-  if (s.live && s.live.rebase_factor > 1) {
-    document.getElementById('rebase-note').textContent =
-      `The ${liveLabel()} curve is rebased to continue the historical simulation on one axis. `
-      + (simulatedBook()
-        ? `The simulated starting NAV is ${money(s.live.inception_nav)}, displayed at ${money(s.live.inception_nav * scale)} notional (${scale}×). `
-        : `The paper account was funded with ${money(s.live.inception_nav)}. `)
-      + 'The header and holdings statistics show account NAV without the chart rebase.';
-  }
+  equityChart.$mode = mode;
 }
 
 /* Bound once at boot, not per render. These live on DOM nodes that outlive any single
@@ -1987,43 +2021,74 @@ function heatCell(v, cls, title, dp, C) {
 
 function renderHeatmap(s) {
   const wrap = document.getElementById('heat-grid');
-  const historical = s.monthly_returns.filter(r => r.month <= s.headline.window_end.slice(0, 7));
-  const liveMonths = s.monthly_returns.filter(r => r.month > s.headline.window_end.slice(0, 7));
+  const histEnd = s.headline.window_end.slice(0, 7);
+  const historical = s.monthly_returns.filter(r => r.month <= histEnd);
+  const liveMonths = s.monthly_returns.filter(r => r.month > histEnd);
   const partial = s.monthly_returns.filter(r => r.partial).map(r => r.month);
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dayBefore = d => new Date(Date.parse(d + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+  const dayAfter = d => new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const inception = s.live && s.live.inception_date;
+  const gap = inception && inception > dayAfter(s.headline.window_end)
+    ? `${dayAfter(s.headline.window_end)} to ${dayBefore(inception)}` : '';
   document.getElementById('heat-sub').textContent = `${rangeOf(s.monthly_returns, 'month')}: `
     + `${historical.length} historical months (${rangeOf(historical, 'month')}; walk-forward backtest and 2026 simulation), `
     + `${liveMonths.length} ${liveLabel()} months (${rangeOf(liveMonths, 'month')}). `
-    + `Partial months: ${partial.length ? partial.join(', ') : 'none'}. `
-    + 'Year totals compound the displayed months; a year can combine historical and live-track returns. Values are percentages; each pair shows portfolio above SPY.';
+    + `Partial months: ${partial.length ? partial.join(', ') : 'none'} (marked *). `
+    + 'Totals compound only the displayed months of one segment and never bridge the simulation and the live track. '
+    + (gap ? `A year holding both is split into a simulation row and a live row, because ${gap} falls between the end of the simulation and live start and is covered by neither. ` : '')
+    + 'Values are percentages; each pair shows portfolio above SPY.';
   const C = themeColors();
 
-  const byYear = {};
-  const periodNotes = new Map(s.monthly_returns.map(r => [r.month, (r.month <= s.equity_curve.backtest.at(-1).d.slice(0, 7) ? 'Walk-forward backtest' : r.month <= s.headline.window_end.slice(0, 7) ? '2026 simulation' : liveLabel()) + (r.partial ? '; partial month' : '')]));
+  const stageOf = month => month <= s.equity_curve.backtest.at(-1).d.slice(0, 7) ? 'Walk-forward backtest'
+    : month <= histEnd ? '2026 simulation' : liveLabel();
+  const periodNotes = new Map(s.monthly_returns.map(r => [r.month, stageOf(r.month) + (r.partial ? '; partial month' : '')]));
+
+  /* One row-pair per (year, segment). A year with only historical or only live months
+     is a single segment and renders exactly as before; a year holding both (2026) is
+     split so no total compounds simulated months onto live months across the sessions
+     neither one covers. */
+  const rowsByKey = new Map();
   s.monthly_returns.forEach(r => {
     const [y, m] = r.month.split('-');
-    if (!byYear[y]) byYear[y] = { strategy: [], spy: [] };
-    byYear[y].strategy[parseInt(m, 10) - 1] = r.strategy;
-    byYear[y].spy[parseInt(m, 10) - 1] = r.spy;
+    const seg = r.month <= histEnd ? 'hist' : 'live';
+    const key = `${y}|${seg}`;
+    if (!rowsByKey.has(key)) rowsByKey.set(key, {year: y, seg, strategy: [], spy: [], partial: []});
+    const row = rowsByKey.get(key);
+    row.strategy[parseInt(m, 10) - 1] = r.strategy;
+    row.spy[parseInt(m, 10) - 1] = r.spy;
+    row.partial[parseInt(m, 10) - 1] = !!r.partial;
   });
-
-  const years = Object.keys(byYear).sort().reverse();
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const segOrder = {live: 0, hist: 1};
+  const rows = [...rowsByKey.values()].sort((a, b) => b.year.localeCompare(a.year) || segOrder[a.seg] - segOrder[b.seg]);
+  const splitYears = new Set(rows.filter(r => r.seg === 'live').map(r => r.year)
+    .filter(y => rowsByKey.has(`${y}|hist`)));
 
   let html = `<table class="heat-table">
     <thead>
       <tr>
         <th></th>
-        ${months.map(m => `<th>${m}</th>`).join('')}
+        ${MONTHS.map(m => `<th>${m}</th>`).join('')}
         <th style="padding-left:12px;font-weight:600;color:var(--ink);">Year / YTD</th>
       </tr>
     </thead>
     <tbody>`;
 
-  years.forEach(y => {
+  rows.forEach(row => {
+    const y = row.year;
+    const split = splitYears.has(y);
+    const present = [...Array(12).keys()].filter(m => row.strategy[m] != null || row.spy[m] != null);
+    const span = present.length ? `${MONTHS[present[0]]}–${MONTHS[present.at(-1)]}` : '';
+    let label = y, totalBasis = `${y} displayed months compounded`;
+    if (split && row.seg === 'hist') {
+      label = present.length && present[0] === 0 && present.at(-1) === 5 ? `${y} (Sim H1)` : `${y} (Sim)`;
+      totalBasis = `${y} ${span} simulation compounded; excludes the live track`;
+    } else if (split) {
+      label = `${y} (Live)`;
+      totalBasis = `${y} ${liveLabel()} since ${inception} compounded; equals the live-track return`;
+    }
     /* Geometric, not additive: a missing month contributes no factor, which is the
-       identity for a product and is what makes a partial year like 2026 (Jan-Jun) come
-       out right. Verified against the equity curve for every year on file -- worst
-       divergence 0.0003pp, four orders below the one decimal shown.
+       identity for a product and is what makes a partial segment come out right.
 
        The guard is `!= null`, deliberately loose, so it catches null as well as a hole.
        JSON cannot express undefined but it can express null, and under a `!== undefined`
@@ -2032,32 +2097,33 @@ function renderHeatmap(s) {
        genuinely flat month. Missing data must render as missing, never as zero. */
     let stratYtd = 1, spyYtd = 1, hasStrat = false, hasSpy = false;
     for (let m = 0; m < 12; m++) {
-      if (byYear[y].strategy[m] != null) { stratYtd *= (1 + byYear[y].strategy[m]); hasStrat = true; }
-      if (byYear[y].spy[m] != null)      { spyYtd   *= (1 + byYear[y].spy[m]);      hasSpy   = true; }
+      if (row.strategy[m] != null) { stratYtd *= (1 + row.strategy[m]); hasStrat = true; }
+      if (row.spy[m] != null)      { spyYtd   *= (1 + row.spy[m]);      hasSpy   = true; }
     }
     stratYtd -= 1; spyYtd -= 1;
 
     const empty = '<td><div class="heat-cell empty"></div></td>';
     const blank = cls => `<td style="padding-left:12px;"><div class="heat-cell${cls}"></div></td>`;
+    const mm = m => `${y}-${String(m + 1).padStart(2, '0')}`;
 
-    html += `<tr><td rowspan="2" class="heat-year-col">${esc(y)}</td>`;
+    html += `<tr class="heat-seg-${row.seg}"><td rowspan="2" class="heat-year-col">${esc(label)}</td>`;
     for (let m = 0; m < 12; m++) {
-      const val = byYear[y].strategy[m];
+      const val = row.strategy[m];
       html += val == null ? empty
-        : `<td>${heatCell(val, '', `Portfolio · ${y}-${String(m+1).padStart(2,'0')} (${periodNotes.get(`${y}-${String(m+1).padStart(2,'0')}`)}): ${signedPct(val)}`, ';font-weight:500', C)}</td>`;
+        : `<td>${heatCell(val, row.partial[m] ? ' partial' : '', `Portfolio · ${mm(m)} (${periodNotes.get(mm(m))}): ${signedPct(val)}`, ';font-weight:500', C)}</td>`;
     }
     html += hasStrat
-      ? `<td style="padding-left:12px;">${heatCell(stratYtd, '', `Portfolio · ${y} displayed months compounded: ${signedPct(stratYtd)}`, ';font-weight:700', C)}</td>`
+      ? `<td style="padding-left:12px;">${heatCell(stratYtd, '', `Portfolio · ${totalBasis}: ${signedPct(stratYtd)}`, ';font-weight:700', C)}</td>`
       : blank('');
-    html += `</tr><tr>`;
+    html += `</tr><tr class="heat-seg-${row.seg}">`;
 
     for (let m = 0; m < 12; m++) {
-      const val = byYear[y].spy[m];
+      const val = row.spy[m];
       html += val == null ? empty
-        : `<td>${heatCell(val, ' spy-cell', `S&P 500 · ${y}-${String(m+1).padStart(2,'0')} (${periodNotes.get(`${y}-${String(m+1).padStart(2,'0')}`)}): ${signedPct(val)}`, '', C)}</td>`;
+        : `<td>${heatCell(val, ' spy-cell', `S&P 500 · ${mm(m)} (${periodNotes.get(mm(m))}): ${signedPct(val)}`, '', C)}</td>`;
     }
     html += hasSpy
-      ? `<td style="padding-left:12px;">${heatCell(spyYtd, ' spy-cell', `S&P 500 · ${y} displayed months compounded: ${signedPct(spyYtd)}`, ';font-weight:700', C)}</td>`
+      ? `<td style="padding-left:12px;">${heatCell(spyYtd, ' spy-cell', `S&P 500 · ${totalBasis}: ${signedPct(spyYtd)}`, ';font-weight:700', C)}</td>`
       : blank(' spy-cell');
     html += `</tr>`;
   });
@@ -2310,12 +2376,11 @@ function repaintCharts() {
     o.plugins.eventLines.events.forEach(ev => {
       if (ev.date === SNAP.live.inception_date) ev.color = C.blue;
     });
-    const ds = equityChart.data.datasets;
-    ds[0].borderColor = C.bench;
-    ds[0].backgroundColor = C.benchFill;
-    ds[1].borderColor = C.grey;
-    ds[2].borderColor = C.amber;
-    ds[3].borderColor = C.blue;
+    const roleColor = {bench: C.bench, backtest: C.grey, simulation: C.amber, live: C.blue};
+    equityChart.data.datasets.forEach(d => {
+      if (roleColor[d.role]) d.borderColor = roleColor[d.role];
+      if (d.role === 'bench') d.backgroundColor = C.benchFill;
+    });
     equityChart.update('none');
   }
 
@@ -2522,7 +2587,9 @@ const ACCOUNTS = {
     scale: 500,
     base: 5000000,
     marked: false,
-    description: 'An alternative tail-drawdown-controlled risk-sizing model monitored alongside the crisis-router research sleeve.'
+    description: 'An alternative tail-drawdown-controlled risk-sizing model monitored alongside the crisis-router research sleeve.',
+    // The shadow target is a fixed basket from one model signal; it does not re-rank monthly.
+    fixedTargetSignal: '2026-06-30'
   },
   hedged: {
     file: 'institutional_hedged_snapshot.json',

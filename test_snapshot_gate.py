@@ -389,6 +389,9 @@ def funded_fixture() -> dict:
                           benchmark_return=None, excess_return=None,
                           benchmark_return_iwm=None, excess_return_iwm=None)
     result["equity_curve"]["live"] = [dict(d="2026-10-22", v=21252.8), dict(d="2026-10-23", v=21423.22)]
+    # The fixture invents its own live window, so the real live-window SPY curve
+    # (if the published snapshot carries one) no longer applies.
+    result["equity_curve"].pop("spy_live", None)
     result["holdings"].update(as_of="2026-10-23", price_as_of="2026-10-23", positions=[
         dict(ticker="AAA", name="Alpha", sector="Tech", shares=100, price=101.1632,
              value=10116.32, weight=10116.32 / 10711.61, rationale="Fixture")])
@@ -877,6 +880,143 @@ def test_hedged_history_rejects_leaks_nonfinite_and_extra_columns():
         except (AssertionError, ValueError):
             continue
         raise AssertionError(f'accepted a malformed or leaking hedged journal: {description}')
+
+
+# --------------------------------------------------------------------------
+# equity_curve.spy_live: the live-window benchmark curve
+# --------------------------------------------------------------------------
+
+
+def _with_spy_live(payload: dict) -> dict:
+    """Attach a synthetic spy_live that ends exactly on live.benchmark_return."""
+
+    out = copy.deepcopy(payload)
+    live = out["live"]
+    dates = sorted({p["d"] for p in out["equity_curve"]["live"]})
+    end = live["inception_nav"] * (1 + live["benchmark_return"])
+    n = len(dates) - 1
+    out["equity_curve"]["spy_live"] = [
+        {"d": d, "v": round(end if i == n else live["inception_nav"] + (end - live["inception_nav"]) * i / n
+                            + (15 if i % 2 else -15) * (i > 0), 2)}
+        for i, d in enumerate(dates)
+    ]
+    return out
+
+
+def _spy_live_rejects(payload: dict, fragment: str) -> None:
+    try:
+        b.validate_spy_live(payload)
+    except b.SnapshotUpdateError as exc:
+        assert fragment in str(exc), f"expected {fragment!r} in {str(exc)!r}"
+        return
+    raise AssertionError(f"expected spy_live rejection mentioning {fragment!r}")
+
+
+def test_published_spy_live_reconciles_when_present() -> None:
+    for name in ("portfolio", "institutional", "shadow"):
+        payload = json.loads(SNAPSHOT.with_name(name + "_snapshot.json").read_text())
+        b.validate_spy_live(payload)  # absent on older snapshots: a no-op
+        points = payload["equity_curve"].get("spy_live")
+        if points:
+            implied = points[-1]["v"] / points[0]["v"] - 1
+            assert abs(implied - payload["live"]["benchmark_return"]) <= 1e-4, (name, implied)
+            assert points[0]["d"] == payload["equity_curve"]["live"][0]["d"], name
+            assert points[-1]["d"] <= payload["live"]["last_updated"], name
+        b.validate_spy_live(_with_spy_live(payload))
+
+
+def test_spy_live_rejects_every_drift_from_the_live_block() -> None:
+    good = _with_spy_live(json.loads(SNAPSHOT.read_text()))
+    b.validate_spy_live(good)
+
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"][-1]["v"] *= 1.01
+    _spy_live_rejects(bad, "does not reconcile")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"] = bad["equity_curve"]["spy_live"][1:]
+    _spy_live_rejects(bad, "first live session")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"][0]["v"] = 10_001.0
+    _spy_live_rejects(bad, "deposit base")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"].append({"d": "2099-01-02", "v": 9_000.0})
+    _spy_live_rejects(bad, "runs past")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"][1], bad["equity_curve"]["spy_live"][2] = (
+        bad["equity_curve"]["spy_live"][2], bad["equity_curve"]["spy_live"][1])
+    _spy_live_rejects(bad, "strictly increasing")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"][3]["v"] = -1.0
+    _spy_live_rejects(bad, "non-positive")
+    bad = copy.deepcopy(good)
+    bad["equity_curve"]["spy_live"][3]["extra"] = 1
+    _spy_live_rejects(bad, "{d, v}")
+    bad = copy.deepcopy(good)
+    bad["live"]["benchmark_return"] = None
+    _spy_live_rejects(bad, "requires live.benchmark_return")
+
+
+def test_spy_live_key_may_be_added_but_never_removed() -> None:
+    base = json.loads(SNAPSHOT.read_text())
+    base["equity_curve"].pop("spy_live", None)  # the pre-spy_live snapshot shape
+    with_spy = _with_spy_live(base)
+    b.validate(base, with_spy)          # additive introduction is allowed
+    b.validate(with_spy, copy.deepcopy(with_spy))
+    for before, after, label in (
+        (with_spy, copy.deepcopy(base), "removal"),
+        (base, {**copy.deepcopy(base), "equity_curve": {**base["equity_curve"], "other": []}}, "unknown key"),
+    ):
+        try:
+            b.validate(before, after)
+        except b.SnapshotUpdateError as exc:
+            assert "equity_curve keys changed" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"equity_curve {label} was accepted")
+    broken = copy.deepcopy(with_spy)
+    broken["equity_curve"]["spy_live"][-1]["v"] *= 1.05
+    try:
+        b.validate(with_spy, broken)
+    except b.SnapshotUpdateError as exc:
+        assert "does not reconcile" in str(exc), str(exc)
+    else:
+        raise AssertionError("unreconciled spy_live passed the full gate")
+
+
+def test_fallback_spy_live_uses_the_benchmark_series() -> None:
+    import pandas as pd
+
+    series = pd.Series([739.09, 747.03, 701.10],
+                       index=pd.to_datetime(["2026-07-27", "2026-07-28", "2026-11-20"]))
+    points = b._spy_live_points(series, 10_000.0)
+    assert [p["d"] for p in points] == ["2026-07-27", "2026-07-28", "2026-11-20"], points
+    assert points[0]["v"] == 10_000.0, points
+    assert abs(points[-1]["v"] / points[0]["v"] - 1 - b._series_return(series)) < 1e-6, points
+
+
+
+def test_fallback_refresh_extends_spy_live_or_keeps_it_with_a_carried_benchmark() -> None:
+    import pandas as pd
+
+    base = funded_fixture()
+    base["live"].update(benchmark_return=0.0, excess_return=base["live"]["since_inception_return"])
+    base["equity_curve"]["spy_live"] = [{"d": "2026-10-22", "v": 10_000.0}]
+    b.validate_spy_live(base)
+
+    updated = refresh_offline(base, future=True)
+    b.validate(base, updated)
+    assert updated["equity_curve"]["spy_live"] == [
+        {"d": "2026-10-22", "v": 10_000.0}, {"d": "2026-10-26", "v": 10_100.0}], updated["equity_curve"]["spy_live"]
+    assert updated["live"]["benchmark_return"] == 0.01, updated["live"]
+
+    closes = pd.DataFrame({"AAA": [100.3111, 101.1632, 102.0]},
+                          index=pd.to_datetime(["2026-10-22", "2026-10-23", "2026-10-26"]))
+    with patch.object(b, "_download_closes", return_value=closes), \
+         patch.object(b, "_benchmark_series", side_effect=RuntimeError("yahoo down")), \
+         patch.object(b, "_benchmark_series_for", return_value=None):
+        carried = b.update_snapshot(base)[0]
+    b.validate(base, carried)
+    assert carried["live"]["benchmark_return"] == 0.0, carried["live"]
+    assert carried["equity_curve"]["spy_live"] == base["equity_curve"]["spy_live"]
 
 
 def main() -> int:

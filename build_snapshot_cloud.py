@@ -682,6 +682,10 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
 
     if benchmark is None:
         benchmark = live.get("benchmark_return")
+    elif "spy_live" in snapshot["equity_curve"]:
+        # Same series as the benchmark just measured. When the refresh fails, the
+        # carried benchmark and the published spy_live still describe one window.
+        snapshot["equity_curve"]["spy_live"] = _spy_live_points(benchmark_series, inception_nav)
 
     # The research-side builder measures this window from its local SPY cache. Preserve
     # that value when Yahoo drops only the benchmark request; excess return is still
@@ -748,6 +752,73 @@ def update_snapshot(base: dict) -> tuple[dict, dict]:
 # ---------------------------------------------------------------------------
 # Validation gate
 # ---------------------------------------------------------------------------
+
+
+SPY_LIVE_TOLERANCE = 1e-4
+
+
+def _spy_live_points(series: "pd.Series", inception_nav: float) -> list[dict]:
+    """``equity_curve.spy_live``: the benchmark window normalised to the live start.
+
+    Built from exactly the close series that ``live.benchmark_return`` is measured on
+    (first session on or after inception through the latest mark), so the published
+    curve and the S&P 500 card cannot describe different windows.
+    """
+
+    first = float(series.iloc[0])
+    return [
+        {"d": stamp.strftime("%Y-%m-%d"), "v": round(inception_nav * float(close) / first, 2)}
+        for stamp, close in series.items()
+    ]
+
+
+def validate_spy_live(snapshot: dict) -> None:
+    """``equity_curve.spy_live`` is optional; when present it must reconcile exactly.
+
+    It is not frozen: SPY is dividend-adjusted, so an ex-dividend date inside the live
+    window legitimately rescales earlier normalised points. What may never drift is
+    its relationship to the live block: it starts at the deposit base on the first
+    live session, never runs past the latest mark, and its end-to-end return is
+    ``live.benchmark_return``.
+    """
+
+    curve = snapshot.get("equity_curve", {})
+    if "spy_live" not in curve:
+        return
+    points = curve["spy_live"]
+    live = snapshot["live"]
+    if not isinstance(points, list) or len(points) < 1:
+        raise SnapshotUpdateError("equity_curve.spy_live must be a non-empty list")
+    dates: list[str] = []
+    for point in points:
+        if not isinstance(point, dict) or set(point) != {"d", "v"}:
+            raise SnapshotUpdateError("equity_curve.spy_live points must be {d, v}")
+        value = _number(point["v"], "equity_curve.spy_live.v")
+        if value <= 0.0:
+            raise SnapshotUpdateError("equity_curve.spy_live contains a non-positive value")
+        dates.append(str(point["d"]))
+    if dates != sorted(dates) or len(set(dates)) != len(dates):
+        raise SnapshotUpdateError("equity_curve.spy_live dates are not strictly increasing")
+    live_curve = curve.get("live") or []
+    first_mark = str(live_curve[0]["d"]) if live_curve else str(live["inception_date"])
+    if dates[0] != first_mark or dates[0] < str(live["inception_date"]):
+        raise SnapshotUpdateError(
+            f"equity_curve.spy_live must start on the first live session {first_mark}, got {dates[0]}"
+        )
+    if dates[-1] > str(live["last_updated"]):
+        raise SnapshotUpdateError("equity_curve.spy_live runs past live.last_updated")
+    base = float(live["inception_nav"])
+    if abs(float(points[0]["v"]) - base) > 0.005:
+        raise SnapshotUpdateError(f"equity_curve.spy_live must start at the deposit base {base:.2f}")
+    benchmark = live.get("benchmark_return")
+    if benchmark is None:
+        raise SnapshotUpdateError("equity_curve.spy_live requires live.benchmark_return")
+    implied = float(points[-1]["v"]) / float(points[0]["v"]) - 1.0
+    if abs(implied - float(benchmark)) > SPY_LIVE_TOLERANCE:
+        raise SnapshotUpdateError(
+            f"equity_curve.spy_live return {implied:.6f} does not reconcile to "
+            f"live.benchmark_return {float(benchmark):.6f}"
+        )
 
 
 def _canonical(value: object) -> str:
@@ -1107,7 +1178,9 @@ def validate(base: dict, updated: dict) -> None:
             base["equity_curve"][name]
         ):
             raise SnapshotUpdateError(f"Certified curve 'equity_curve.{name}' was modified")
-    if tuple(updated["equity_curve"]) != tuple(base["equity_curve"]):
+    base_keys, new_keys = tuple(base["equity_curve"]), tuple(updated["equity_curve"])
+    # spy_live is the one additive key: it may appear once, and never disappear.
+    if new_keys != base_keys and not ("spy_live" not in base_keys and new_keys == base_keys + ("spy_live",)):
         raise SnapshotUpdateError("equity_curve keys changed")
 
     old_positions = base["holdings"]["positions"]
@@ -1254,6 +1327,8 @@ def validate(base: dict, updated: dict) -> None:
         raise SnapshotUpdateError("The last live point is not NAV * rebase_factor")
     if str(curve[-1]["d"]) != str(updated["as_of"]):
         raise SnapshotUpdateError("as_of disagrees with the last live point")
+
+    validate_spy_live(updated)
 
     # Must serialise cleanly: NaN/Infinity would produce JSON the browser rejects.
     json.dumps(updated, separators=(",", ":"), allow_nan=False)
