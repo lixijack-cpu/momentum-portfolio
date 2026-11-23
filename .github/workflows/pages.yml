@@ -20,10 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,9 +52,44 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
+        id: upload
         uses: actions/upload-pages-artifact@v3
         with:
           path: '_site'
+
+  # A separate job, as in GitHub's Pages template: deploy-pages running ~300 ms
+  # after the upload in the same job raced artifact indexing ("Found 0
+  # artifact(s)"). The wait below confirms the artifact is listed before deploying.
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    # Job-level grant: the artifacts listing needs actions:read, which the
+    # workflow-level permissions above leave unset. Job permissions replace the
+    # workflow block for this job, so the Pages scopes are restated.
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Wait for github-pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 15); do
+            count=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+              --jq '[.artifacts[] | select(.name == "github-pages")] | length' || echo 0)
+            if [ "${count:-0}" -ge 1 ]; then
+              echo "github-pages artifact visible after attempt ${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::github-pages artifact not visible after 30s"
+          exit 1
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
